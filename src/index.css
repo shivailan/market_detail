@@ -19,3 +19,55 @@ body {
 #root {
   width: 100%;
 }
+
+@keyframes gradient-text {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-text {
+  background-size: 200% auto;
+  animation: gradient-text 5s ease infinite;
+}
+@keyframes lateral {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+.animate-lateral {
+  animation: lateral 1.5s infinite;
+}
+.vertical-text {
+  writing-mode: vertical-rl;
+}
+
+@keyframes gradient-text {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-text {
+  background-size: 200% auto;
+  animation: gradient-text 5s ease infinite;
+}
+@keyframes laser-move {
+  0% { left: -10%; opacity: 0; }
+  50% { opacity: 1; }
+  100% { left: 110%; opacity: 0; }
+}
+.animate-laser {
+  animation: laser-move 3s infinite linear;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-20px) rotate(1deg); }
+}
+.animate-float-car {
+  animation: float 6s ease-in-out infinite;
+}
+@keyframes lateral {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+.animate-lateral {
+  animation: lateral 1.5s infinite;
+}
