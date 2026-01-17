@@ -87,25 +87,27 @@ export default function App() {
       />
 
       {/* SYSTÈME DE ROUTAGE : Affichage conditionnel des pages */}
-      <main className="relative z-10">
-        {view === 'landing' && (
-          <Landing dark={isDarkMode} setView={setView} handleSearch={() => setView('explorer')} />
-        )}
+<main className="relative z-10">
+  {/* Page d'accueil */}
+  {view === 'landing' && (
+    <Landing dark={isDarkMode} setView={setView} handleSearch={() => setView('explorer')} />
+  )}
 
-        {view === 'explorer' && (
-          <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />
-        )}
+  {/* Page de recherche */}
+  {view === 'explorer' && (
+    <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />
+  )}
 
-        {/* ACCÈS PRO : Dashboard de l'Atelier */}
-        {view === 'dashboard' && session && userRole === 'pro' && (
-          <ProDashboard session={session} dark={isDarkMode} />
-        )}
+  {/* --- ESPACE CLIENT (C'EST ICI QUE CA SE JOUE) --- */}
+  {view === 'mes-reservations' && (
+    <MesReservations session={session} dark={isDarkMode} />
+  )}
 
-        {/* ACCÈS CLIENT : Mes Missions (Style Planity) */}
-        {view === 'mes-reservations' && session && userRole === 'client' && (
-          <MesReservations session={session} dark={isDarkMode} />
-        )}
-      </main>
+  {/* ESPACE PRO */}
+  {view === 'dashboard' && (
+    <ProDashboard session={session} dark={isDarkMode} />
+  )}
+</main>
 
       {/* --- MODALS & OVERLAYS --- */}
 
@@ -119,16 +121,15 @@ export default function App() {
         />
       )}
 
-      {/* Modal de Réservation (Style Planity en étapes) */}
-      {isBookingOpen && selectedPro && (
-        <BookingModal 
-          pro={selectedPro} 
-          session={session} 
-          onClose={() => setIsBookingOpen(false)} 
-          dark={isDarkMode} 
-        />
-      )}
-
+{isBookingOpen && selectedPro && (
+  <BookingModal 
+    pro={selectedPro} 
+    session={session} 
+    onClose={() => setIsBookingOpen(false)} 
+    dark={isDarkMode}
+    setView={setView} // <--- TRÈS IMPORTANT : Ajoute cette ligne !
+  />
+)}
       {/* Modal d'Authentification (Login/Register) */}
       {showAuth && (
         <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
