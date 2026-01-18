@@ -1,10 +1,10 @@
 import {
-    addDays,
-    addWeeks,
-    format,
-    isSameDay,
-    startOfWeek,
-    subWeeks
+  addDays,
+  addWeeks,
+  format,
+  isSameDay,
+  startOfWeek,
+  subWeeks
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -67,7 +67,7 @@ export default function ProDashboard({ session, dark }) {
     <div className={`pt-40 pb-20 px-6 md:px-12 max-w-[1800px] mx-auto font-black italic uppercase ${dark ? 'text-white' : 'text-black'}`}>
       
       {isConfiguring ? (
-        <ProCMS profile={profile} session={session} dark={dark} onComplete={() => { setIsConfiguring(false); fetchData(); }} />
+        <ProCMS supabase={supabase} profile={profile} session={session} dark={dark} onComplete={() => { setIsConfiguring(false); fetchData(); }} />
       ) : (
         <div className="animate-in fade-in duration-700">
           
@@ -263,10 +263,12 @@ const handleVerify = async () => {
 }
 
 
+// Ajoute "supabase" ici dans les arguments
 function ProCMS({ supabase, profile, session, dark, onComplete }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   
+  // ... reste du code
   const initialServices = Array.isArray(profile?.services_list) 
     ? profile.services_list 
     : [{ titre: '', desc: '', price: '', images: [] }];
@@ -348,18 +350,31 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
     e.target.value = ""; 
   };
 
-  const save = async () => {
-    setLoading(true);
-    const { error } = await supabase.from('profiles_pro').upsert({ 
+const save = async () => {
+  if (!supabase) {
+    alert("Erreur : Connexion à la base de données perdue.");
+    return;
+  }
+  
+  setLoading(true);
+  try {
+    const { error } = await supabase
+      .from('profiles_pro')
+      .upsert({ 
         id: session.user.id, 
         ...formData, 
         is_visible: true, 
-        updated_at: new Date() 
-    });
-    if (error) alert(error.message);
-    else onComplete();
+        updated_at: new Date().toISOString() 
+      });
+
+    if (error) throw error;
+    onComplete();
+  } catch (err) {
+    alert("Erreur lors de la sauvegarde : " + err.message);
+  } finally {
     setLoading(false);
-  };
+  }
+};
 
   const inputStyle = `w-full border p-6 rounded-[25px] mb-4 outline-none font-black italic uppercase transition-all ${dark ? 'bg-black text-white border-white/10 focus:border-[#bc13fe]' : 'bg-slate-50 text-black border-black/10 focus:border-[#bc13fe]'}`;
 

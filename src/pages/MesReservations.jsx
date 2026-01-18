@@ -6,6 +6,7 @@ export default function MesReservations({ session, dark }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeChat, setActiveChat] = useState(null);
+  
 
   const fetchBookingsByEmail = useCallback(async () => {
     if (!session?.user?.email) return;
