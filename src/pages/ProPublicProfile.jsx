@@ -6,6 +6,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
 
   const [showChat, setShowChat] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  
 
   // Effet de scroll pour le header
   useEffect(() => {
