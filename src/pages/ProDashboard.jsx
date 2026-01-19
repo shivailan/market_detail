@@ -166,62 +166,86 @@ export default function ProDashboard({ session, dark }) {
     </div>
   );
 }
-
-// COMPOSANT MISSION AVEC LOGIQUE DE VALIDATION CODE
+// COMPOSANT MISSION AVEC LOGIQUE DE VALIDATION ET ANNULATION
 function MissionCard({ app, dark, glass, updateStatus, setActiveChat }) {
     const [vCode, setVCode] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
 
-const handleVerify = async () => {
-    // On nettoie les deux valeurs avant de comparer
-    const inputCode = vCode.trim().toUpperCase();
-    const serverCode = app.validation_code ? app.validation_code.trim().toUpperCase() : '';
+    // Fonction de validation du code de fin de mission
+    const handleVerify = async () => {
+        const inputCode = vCode.trim().toUpperCase();
+        const serverCode = app.validation_code ? app.validation_code.trim().toUpperCase() : '';
 
-    if(inputCode === serverCode && serverCode !== '') {
-        setIsVerifying(true);
-        try {
-            const { error } = await supabase
-                .from('appointments')
-                .update({ 
-                    status: 'terminé', 
-                    payment_status: 'released' // On libère l'argent
-                })
-                .eq('id', app.id);
+        if(inputCode === serverCode && serverCode !== '') {
+            setIsVerifying(true);
+            try {
+                const { error } = await supabase
+                    .from('appointments')
+                    .update({ 
+                        status: 'terminé', 
+                        payment_status: 'released' 
+                    })
+                    .eq('id', app.id);
 
-            if (error) throw error;
-            
-            alert("PAIEMENT LIBÉRÉ : Mission terminée avec succès.");
-            await updateStatus(app.id, 'terminé'); // Sync avec le reste de l'UI
-        } catch (err) {
-            alert("Erreur lors de la mise à jour : " + err.message);
-        } finally {
-            setIsVerifying(false);
+                if (error) throw error;
+                
+                alert("PAIEMENT LIBÉRÉ : Mission terminée avec succès.");
+                await updateStatus(app.id, 'terminé'); 
+            } catch (err) {
+                alert("Erreur lors de la mise à jour : " + err.message);
+            } finally {
+                setIsVerifying(false);
+            }
+        } else {
+            alert("CODE INVALIDE : Vérifiez le code fourni par le client.");
         }
-    } else {
-        alert("CODE INVALIDE : Vérifiez le code fourni par le client.");
-        console.log("Debug - Saisi:", inputCode, "Attendu:", serverCode); // Regarde dans ta console F12
-    }
-};
+    };
+
+    // Style dynamique selon le statut de la mission
+    const getStatusStyles = () => {
+        switch (app.status) {
+            case 'confirmé': return 'border-green-500 text-green-500';
+            case 'annulé': return 'border-red-500 text-red-500 bg-red-500/5';
+            case 'refusé': return 'border-red-500 text-red-500 opacity-50';
+            case 'terminé': return 'border-[#00f2ff] text-[#00f2ff]';
+            default: return 'border-[#bc13fe] text-[#bc13fe] animate-pulse';
+        }
+    };
+
     return (
-        <div className={`p-8 md:p-10 rounded-[50px] border ${glass} flex flex-col gap-8 group hover:border-[#00f2ff]/50 transition-all duration-500 text-left`}>
+        <div className={`p-8 md:p-10 rounded-[50px] border ${glass} flex flex-col gap-8 group transition-all duration-500 text-left 
+            ${app.status === 'annulé' ? 'border-red-500/40 bg-red-500/5' : 'hover:border-[#00f2ff]/50'}`}>
+          
           <div className="flex flex-wrap justify-between items-center gap-6">
             <div className="flex items-center gap-8">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#bc13fe] to-[#00f2ff] flex items-center justify-center text-black font-black text-xl shadow-lg">
-                {app.client_name ? app.client_name[0] : 'U'}
+              {/* Avatar dynamique : Initiale ou icône d'alerte si annulé */}
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-black font-black text-xl shadow-lg 
+                ${app.status === 'annulé' ? 'bg-red-500' : 'bg-gradient-to-br from-[#bc13fe] to-[#00f2ff]'}`}>
+                {app.status === 'annulé' ? <i className="fas fa-ban text-white"></i> : (app.client_name ? app.client_name[0] : 'U')}
               </div>
+              
               <div>
-                <p className="text-[20px] mb-1 font-black tracking-tighter">{app.client_name}</p>
+                <div className="flex items-center gap-3">
+                    <p className="text-[20px] mb-1 font-black tracking-tighter">{app.client_name}</p>
+                    {/* Badge de statut */}
+                    <span className={`px-3 py-1 rounded-full text-[8px] border font-black ${getStatusStyles()}`}>
+                        {app.status ? app.status.toUpperCase() : 'INCONNU'}
+                    </span>
+                </div>
                 <p className="text-[10px] text-[#00f2ff] tracking-[0.3em] font-bold uppercase">{app.service_type || 'CUSTOM_PROTOCOL'}</p>
               </div>
             </div>
+
             <div className="text-right">
               <p className="text-[15px] font-black tracking-tighter">{app.appointment_date}</p>
               <p className="text-[11px] opacity-40 italic">H_START: {app.appointment_time}</p>
             </div>
+
             <div className="flex gap-4">
               <button onClick={() => setActiveChat({ id: app.client_id, name: app.client_name })} className="w-14 h-14 border border-white/10 rounded-full flex items-center justify-center hover:bg-white hover:text-black transition-all">
                 <i className="fas fa-comment-dots"></i>
               </button>
+              
               {app.status === 'en attente' && (
                 <div className="flex gap-2">
                   <button onClick={() => updateStatus(app.id, 'confirmé')} className="w-14 h-14 bg-[#00f2ff] text-black rounded-full flex items-center justify-center hover:scale-110 transition-all shadow-lg"><i className="fas fa-check"></i></button>
@@ -231,6 +255,22 @@ const handleVerify = async () => {
             </div>
           </div>
 
+          {/* AFFICHAGE DU MOTIF SI ANNULÉ PAR LE CLIENT */}
+          {app.status === 'annulé' && app.cancellation_reason && (
+            <div className="mt-2 p-6 rounded-[30px] bg-red-500/10 border border-red-500/20 animate-in slide-in-from-top-2">
+                <div className="flex items-start gap-4">
+                    <i className="fas fa-exclamation-triangle text-red-500 mt-1"></i>
+                    <div>
+                        <p className="text-[10px] font-black tracking-widest text-red-500 mb-1 uppercase">ALERTE_ANNULATION_CLIENT</p>
+                        <p className="text-[11px] opacity-80 normal-case italic font-medium">
+                            {app.cancellation_reason}
+                        </p>
+                    </div>
+                </div>
+            </div>
+          )}
+
+          {/* INTERFACE DE VALIDATION DE FIN DE MISSION */}
           {app.status === 'confirmé' && (
             <div className={`mt-4 p-8 rounded-[35px] border-2 border-dashed ${dark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'} flex flex-col md:flex-row items-center gap-6 animate-in zoom-in-95`}>
               <div className="text-left flex-1">
@@ -252,6 +292,7 @@ const handleVerify = async () => {
             </div>
           )}
 
+          {/* MESSAGE DE SUCCÈS SI TERMINÉ */}
           {app.status === 'terminé' && (
             <div className="flex items-center justify-center gap-4 p-6 rounded-[30px] bg-green-500/10 border border-green-500/20 text-green-500">
                <i className="fas fa-check-double animate-pulse"></i>
@@ -261,7 +302,6 @@ const handleVerify = async () => {
         </div>
     );
 }
-
 
 // Ajoute "supabase" ici dans les arguments
 function ProCMS({ supabase, profile, session, dark, onComplete }) {

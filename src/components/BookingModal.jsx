@@ -14,6 +14,29 @@ export default function BookingModal({ pro, session, onClose, dark, setView }) {
 
   // --- LOGIQUE DE DISPONIBILITÉ ---
 
+  // : SI PAS DE SESSION, ON AFFICHE UN MESSAGE D'ERREUR ---
+  if (!session) {
+    return (
+      <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 font-['Outfit'] italic uppercase">
+        <div className={`w-full max-w-sm p-12 rounded-[50px] border border-white/10 text-center ${dark ? 'bg-[#050505] text-white' : 'bg-white text-black'}`}>
+          <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-8 text-3xl">
+            <i className="fas fa-lock"></i>
+          </div>
+          <h3 className="text-2xl font-black mb-4">Accès_Refusé</h3>
+          <p className="text-[10px] opacity-50 mb-8 leading-relaxed">
+            Vous devez être authentifié pour accéder au protocole de réservation et sécuriser votre créneau.
+          </p>
+          <button 
+            onClick={onClose}
+            className="w-full bg-white text-black py-5 rounded-full font-black text-[10px] tracking-widest hover:bg-[#bc13fe] hover:text-white transition-all"
+          >
+            RETOUR / SE CONNECTER
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // 1. Désactiver les jours où le pro ne travaille pas
   const disabledDays = (date) => {
     // Désactiver les jours passés

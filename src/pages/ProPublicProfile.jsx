@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import ChatBox from '../components/ChatBox';
+import { supabase } from '../lib/supabase'; // Assure-toi que le chemin est correct
 
 export default function ProPublicProfile({ pro, session, onBookingClick, onClose, dark }) {
   if (!pro) return null;
 
   const [showChat, setShowChat] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [reviews, setReviews] = useState([]);
+
+  const [currentPage, setCurrentPage] = useState(0);
+const reviewsPerPage = 4;
   
 
   // Effet de scroll pour le header
@@ -42,7 +47,28 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
     </div>
   );
 };
-  
+useEffect(() => {
+  const fetchReviews = async () => {
+    // Si supabase n'est pas défini, on arrête tout
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('pro_id', pro.id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error("Erreur lors du chargement des avis:", error.message);
+    } else {
+      setReviews(data || []);
+    }
+  };
+
+  if (pro?.id) {
+    fetchReviews();
+  }
+}, [pro.id]);
   const getInstaLink = (input) => {
     if (!input) return null;
     return input.startsWith('http') ? input : `https://instagram.com/${input.replace('@', '')}`;
@@ -140,7 +166,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
                 
                 {pro.instagram_url && (
                     <a href={getInstaLink(pro.instagram_url)} target="_blank" className="group inline-flex items-center gap-6 px-10 py-5 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] font-black italic text-[11px] tracking-widest hover:bg-[#bc13fe] hover:text-white transition-all">
-                        INSTAGRAM_FEED <i className="fab fa-instagram text-lg group-hover:rotate-12 transition-transform"></i>
+                        INSTAGRAM <i className="fab fa-instagram text-lg group-hover:rotate-12 transition-transform"></i>
                     </a>
                 )}
 
@@ -253,6 +279,96 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
             </section>
           )}
 
+{/* 04. Avis Clients - Système de Slider */}{/* 04. Avis Clients - Système de Slider */}
+<section className="animate-in fade-in duration-700">
+  <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-8">
+    <div className="flex items-center gap-6">
+      <div className="w-14 h-14 rounded-2xl bg-[#bc13fe]/10 flex items-center justify-center text-[#bc13fe] border border-[#bc13fe]/30 shadow-[0_0_15px_rgba(188,19,254,0.1)]">
+        <i className="fa-regular fa-message text-xl"></i>
+      </div>
+      <div>
+        <h4 className="text-[11px] tracking-[0.6em] uppercase font-black text-[#bc13fe]">04. AvisClients</h4>
+      </div>
+    </div>
+
+    {/* NAVIGATION VISIBLE */}
+    <div className="flex items-center gap-4 bg-white/5 p-2 rounded-full border border-white/10 backdrop-blur-md">
+      <button 
+        onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+        disabled={currentPage === 0}
+        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
+          currentPage === 0 
+          ? 'opacity-20 border-white/10 cursor-not-allowed' 
+          : 'bg-white/10 border-[#00f2ff] text-[#00f2ff] shadow-[0_0_15px_rgba(0,242,255,0.2)] hover:bg-[#00f2ff] hover:text-black'
+        }`}
+      >
+        <i className="fas fa-arrow-left text-xs"></i>
+      </button>
+
+      <div className="px-4 text-[10px] font-black opacity-40 tracking-widest border-x border-white/10">
+        {currentPage + 1} / {Math.ceil(reviews.length / reviewsPerPage) || 1}
+      </div>
+
+      <button 
+        onClick={() => setCurrentPage(prev => (prev + 1) * reviewsPerPage < reviews.length ? prev + 1 : prev)}
+        disabled={(currentPage + 1) * reviewsPerPage >= reviews.length}
+        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
+          (currentPage + 1) * reviewsPerPage >= reviews.length 
+          ? 'opacity-20 border-white/10 cursor-not-allowed' 
+          : 'bg-white/10 border-[#bc13fe] text-[#bc13fe] shadow-[0_0_15px_rgba(188,19,254,0.2)] hover:bg-[#bc13fe] hover:text-white'
+        }`}
+      >
+        <i className="fas fa-arrow-right text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <div className="relative">
+    {/* GRILLE D'AVIS */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {reviews.length > 0 ? (
+        reviews.slice(currentPage * reviewsPerPage, (currentPage * reviewsPerPage) + reviewsPerPage).map((r, index) => (
+          <div 
+            key={r.id} 
+            className="p-8 rounded-[45px] border border-white/10 bg-white/[0.03] backdrop-blur-sm hover:border-[#00f2ff]/30 transition-all duration-500 group flex flex-col justify-between min-h-[200px] animate-in slide-in-from-bottom-4"
+            style={{ animationDelay: `${index * 100}ms` }}
+          >
+            <div>
+              <div className="flex justify-between items-start mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00f2ff]/20 to-[#bc13fe]/20 flex items-center justify-center border border-white/10 font-black text-[12px]">
+                    {r.client_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black tracking-widest uppercase italic">{r.client_name?.split('@')[0]}</p>
+                    <p className="text-[8px] opacity-30 mt-0.5 tracking-tighter">CLIENT_VÉRIFIÉ</p>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  {Array.from({length: 5}).map((_, i) => (
+                    <i key={i} className={`fas fa-star text-[9px] ${i < r.rating ? 'text-[#00f2ff] drop-shadow-[0_0_5px_#00f2ff]' : 'opacity-10'}`}></i>
+                  ))}
+                </div>
+              </div>
+              <p className="text-sm normal-case italic opacity-80 leading-relaxed font-medium group-hover:opacity-100 transition-opacity">
+                "{r.comment}"
+              </p>
+            </div>
+            <div className="mt-6 flex justify-between items-center opacity-20 group-hover:opacity-40 transition-opacity">
+              <span className="text-[8px] font-black tracking-widest">UNIT_ID: #{r.id.slice(0,6)}</span>
+              <span className="text-[8px] font-black tracking-widest">{new Date(r.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="col-span-2 py-24 text-center border-2 border-dashed border-white/5 rounded-[50px] opacity-20">
+            <i className="fa-regular fa-message text-4xl mb-6 block"></i>
+            <p className="text-[11px] tracking-[0.6em] font-black italic">DATABASE_EMPTY: ATTENTE_AVIS_CLIENTS</p>
+        </div>
+      )}
+    </div>
+  </div>
+</section>
           {/* 05. FAQ STYLE ACCORDÉON */}
           {pro.faq && pro.faq.length > 0 && (
             <section className="animate-in fade-in">
@@ -260,7 +376,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
                 <div className="w-12 h-12 rounded-2xl bg-[#bc13fe]/10 flex items-center justify-center text-[#bc13fe] border border-[#bc13fe]/20">
                   <i className="fas fa-question"></i>
                 </div>
-                <h4 className="text-[10px] tracking-[0.6em] text-[#bc13fe] uppercase">05. Intelligence_F.A.Q</h4>
+                <h4 className="text-[10px] tracking-[0.6em] text-[#bc13fe] uppercase">05. F.A.Q</h4>
               </div>
 
               <div className="space-y-4">
@@ -290,7 +406,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#bc13fe]/10 blur-[80px] rounded-full"></div>
             
             <h5 className="relative z-10 text-[10px] tracking-[0.5em] mb-12 border-b border-current/10 pb-6 italic uppercase font-black">
-              <span className="text-[#bc13fe]">UNIT</span>_RESERVATION
+              <span className="text-[#bc13fe]">RESERVATION</span>
             </h5>
             
             <div className="relative z-10 space-y-6 mb-12">
@@ -304,7 +420,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
             
             <div className="relative z-10 space-y-4">
                 <button onClick={onBookingClick} className={`w-full py-7 rounded-3xl text-[11px] font-black tracking-[0.4em] transition-all shadow-2xl active:scale-95 ${dark ? 'bg-[#bc13fe] text-white hover:bg-[#bc13fe]/80' : 'bg-black text-white hover:bg-[#bc13fe]'}`}>
-                  INITIALISER_RDV
+                  Prendre un RDV
                 </button>
 
                 {session && (
@@ -322,13 +438,13 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
         </aside>
       </main>
 
-      {/* 04. LOCALISATION FULL WIDTH */}
+      {/* 06. LOCALISATION FULL WIDTH */}
       <section className="px-6 md:px-20 pb-40">
         <div className="flex items-center gap-6 mb-16">
           <div className="w-12 h-12 rounded-2xl bg-[#00f2ff]/10 flex items-center justify-center text-[#00f2ff] border border-[#00f2ff]/20">
             <i className="fas fa-map-marked-alt"></i>
           </div>
-          <h4 className="text-[10px] tracking-[0.6em] text-[#00f2ff] uppercase">04. Studio_Localization</h4>
+          <h4 className="text-[10px] tracking-[0.6em] text-[#00f2ff] uppercase">06. Localisation</h4>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[600px]">
@@ -343,7 +459,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
 
           <div className={`lg:col-span-4 p-12 rounded-[60px] border flex flex-col justify-center gap-10 ${dark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'}`}>
             <div className="space-y-4">
-              <h5 className="text-4xl font-black italic tracking-tighter leading-none">ACCÈS_UNIT<br/><span className="text-[#00f2ff]">LOGISTIQUE</span></h5>
+              <h5 className="text-4xl font-black italic tracking-tighter leading-none"><br/><span className="text-[#00f2ff]">ACCÈS</span></h5>
               <p className="text-[12px] opacity-60 leading-relaxed normal-case italic">{pro.adresse}</p>
             </div>
             
@@ -381,3 +497,4 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
     </div>
   );
 }
+

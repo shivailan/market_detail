@@ -6,7 +6,21 @@ export default function MesReservations({ session, dark }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeChat, setActiveChat] = useState(null);
+  // À ajouter avec vos autres useState
+const [reviewData, setReviewData] = useState({ rating: 5, comment: '', targetApt: null });
+const [submittingReview, setSubmittingReview] = useState(false);
   
+  // NOUVEAUX ÉTATS POUR L'ANNULATION
+  const [cancellingId, setCancellingId] = useState(null);
+  const [reason, setReason] = useState("");
+
+  const cancellationReasons = [
+    "Contretemps personnel",
+    "Véhicule indisponible",
+    "Météo défavorable",
+    "Erreur de créneau",
+    "Autre"
+  ];
 
   const fetchBookingsByEmail = useCallback(async () => {
     if (!session?.user?.email) return;
@@ -33,6 +47,30 @@ export default function MesReservations({ session, dark }) {
     setLoading(false);
   }, [session]);
 
+  // FONCTION POUR ANNULER LE RDV
+const handleCancel = async (id) => {
+  if (!reason) return alert("Veuillez sélectionner une raison.");
+  
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ 
+      status: 'annulé', 
+      cancellation_reason: `Annulé par le client : ${reason}` 
+    })
+    .match({ id: id, client_name: session.user.email }) // Double vérification
+    .select();
+
+  if (error) {
+    alert("Erreur : " + error.message);
+  } else if (data && data.length > 0) {
+    alert("Annulation confirmée !");
+    setCancellingId(null);
+    fetchBookingsByEmail();
+  } else {
+    alert("Erreur : Le rendez-vous n'a pas pu être trouvé ou vous n'avez pas le droit de le modifier.");
+  }
+};
+
   useEffect(() => {
     fetchBookingsByEmail();
 
@@ -46,6 +84,28 @@ export default function MesReservations({ session, dark }) {
 
     return () => supabase.removeChannel(channel);
   }, [fetchBookingsByEmail, session]);
+
+  const submitReview = async () => {
+  if (!reviewData.comment.trim()) return alert("Veuillez écrire un commentaire.");
+  setSubmittingReview(true);
+
+  const { error } = await supabase.from('reviews').insert([{
+    pro_id: reviewData.targetApt.pro_id,
+    client_name: session.user.email,
+    rating: reviewData.rating,
+    comment: reviewData.comment,
+    appointment_id: reviewData.targetApt.id
+  }]);
+
+  if (error) {
+    alert("Erreur lors de l'envoi : " + error.message);
+  } else {
+    alert("Merci ! Votre avis a été publié.");
+    setReviewData({ rating: 5, comment: '', targetApt: null });
+    fetchBookingsByEmail(); // Rafraîchir pour masquer le formulaire
+  }
+  setSubmittingReview(false);
+};
 
   const glass = dark ? 'bg-white/[0.02] border-white/10' : 'bg-black/[0.02] border-black/10';
 
@@ -115,6 +175,76 @@ export default function MesReservations({ session, dark }) {
                   </div>
                 </div>
               </div>
+
+              {/* ACTION D'ANNULATION */}
+              {res.status !== 'annulé' && res.status !== 'refusé' && (
+                <div className="border-t border-current/5 pt-6 flex justify-end">
+                  {cancellingId === res.id ? (
+                    <div className="flex flex-col md:flex-row gap-4 items-center animate-in slide-in-from-right-4">
+                      <select 
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        className={`text-[10px] p-3 rounded-xl border ${dark ? 'bg-black border-white/20' : 'bg-white border-black/20'}`}
+                      >
+                        <option value="">CHOISIR_UN_MOTIF</option>
+                        {cancellationReasons.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleCancel(res.id)} className="bg-red-600 text-white px-6 py-3 rounded-xl text-[9px]">CONFIRMER_ANNULATION</button>
+                        <button onClick={() => setCancellingId(null)} className="opacity-40 text-[9px]">RETOUR</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setCancellingId(res.id)}
+                      className="text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all font-bold tracking-widest"
+                    >
+                      <i className="fas fa-ban mr-2"></i>ANNULER_LA_MISSION
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* SECTION AVIS (S'affiche si la mission est terminée) */}
+{res.status === 'terminé' && (
+  <div className="mt-4 p-8 rounded-[35px] border border-[#00f2ff]/20 bg-[#00f2ff]/5 animate-in zoom-in-95 duration-500">
+    <div className="flex flex-col gap-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-[10px] font-black tracking-[0.3em] text-[#00f2ff] mb-2">MISSION_ACCOMPLIE</p>
+          <h4 className="text-lg italic font-black uppercase">Notez votre expérience</h4>
+        </div>
+        {/* Système d'étoiles */}
+        <div className="flex gap-2">
+          {[1, 2, 3, 4, 5].map((star) => (
+            <button 
+              key={star} 
+              onClick={() => setReviewData({ ...reviewData, rating: star, targetApt: res })}
+              className="transition-transform hover:scale-125"
+            >
+              <i className={`fa-star text-xl ${reviewData.targetApt?.id === res.id && reviewData.rating >= star ? 'fas text-yellow-400' : 'far opacity-30'}`}></i>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <textarea 
+        placeholder="Décrivez la qualité du polissage, l'accueil, la propreté..."
+        className={`w-full p-6 rounded-[25px] border text-[11px] normal-case italic min-h-[100px] outline-none transition-all ${dark ? 'bg-black/40 border-white/10 focus:border-[#00f2ff]' : 'bg-white border-black/10 focus:border-[#00f2ff]'}`}
+        value={reviewData.targetApt?.id === res.id ? reviewData.comment : ''}
+        onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value, targetApt: res })}
+      />
+
+      <button 
+        onClick={submitReview}
+        disabled={submittingReview}
+        className="w-full py-5 rounded-full bg-[#00f2ff] text-black font-black text-[10px] tracking-[0.5em] hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+      >
+        {submittingReview ? 'TRANSMISSION...' : 'PUBLIER_AVIS'}
+      </button>
+    </div>
+  </div>
+)}
 
               {/* SECTION CODE DE SÉCURITÉ (Uniquement si confirmé) */}
               {res.status === 'confirmé' && (

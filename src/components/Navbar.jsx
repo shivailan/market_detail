@@ -47,7 +47,7 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
                 onClick={() => setView('mes-reservations')} 
                 className={`transition-all hover:text-[#00f2ff] ${view === 'mes-reservations' ? 'text-[#00f2ff] border-b-2 border-[#00f2ff]' : ''}`}
               >
-                Mes_Missions
+                Mes Réservations
               </button>
             )}
           </>
@@ -74,7 +74,7 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
               onClick={() => supabase.auth.signOut()} 
               className="text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all uppercase tracking-widest"
             >
-              Logout
+              Déconnexion
             </button>
           </div>
         ) : (
