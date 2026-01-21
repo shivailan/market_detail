@@ -41,7 +41,40 @@ const [activePerspective, setActivePerspective] = useState('client');
             transform: skewX(-25deg);
             animation: shine-bright 3s infinite;
           }
-        `}
+
+          /* À ajouter dans ton bloc <style> existant */
+
+/* 1. Empêcher le zoom automatique sur mobile lors du clic sur les inputs */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important; 
+  }
+}
+
+/* 2. Animation du scanner plus fluide pour mobile */
+@keyframes laser-mobile {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(400%); opacity: 0; }
+}
+
+.mobile-laser {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .mobile-laser {
+    display: block;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: #00f2ff;
+    box-shadow: 0 0 15px #00f2ff;
+    animation: laser-mobile 3s infinite;
+  }
+}
+        `
+        }
       </style>
 
       <div className={`animate-in fade-in duration-1000 scroll-smooth ${dark ? 'bg-[#0a0a0b]' : 'bg-[#fcfcfc]'}`}>
@@ -99,121 +132,109 @@ const [activePerspective, setActivePerspective] = useState('client');
               {/* Cercle de réfraction dynamique */}
               <div className="absolute inset-[-40px] rounded-full border border-[#00f2ff]/20 animate-water"></div>
               
-              <div className={`relative aspect-square max-w-[550px] mx-auto overflow-hidden rounded-[120px] border-[16px] shadow-3xl transition-all duration-1000 group-hover:rounded-[40px] ${dark ? 'border-white/5 bg-black' : 'border-white bg-white shadow-xl'}`}>
-<img 
-  src={voitureHero} 
-  className="w-full h-full object-cover brightness-110 contrast-110 transition-all duration-[2s]" 
-  alt="Detailing Close-up"
-/>
-                
-                {/* Overlay de Brillance */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-[#00f2ff]/10 to-transparent mix-blend-overlay"></div>
-                
-                {/* Scanner Laser */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                    <div className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_20px_white] animate-laser"></div>
-                </div>
-              </div>
+             <div className={`relative aspect-square max-w-[300px] md:max-w-[550px] mx-auto overflow-hidden rounded-[60px] md:rounded-[120px] border-8 md:border-[16px] shadow-3xl transition-all duration-1000 ${dark ? 'border-white/5 bg-black' : 'border-white bg-white shadow-xl'}`}>
+  <img 
+    src={voitureHero} 
+    className="w-full h-full object-cover scale-110" 
+    alt="Detailing View"
+    loading="eager" // Charge l'image immédiatement (priorité haute)
+  />
+  
+  {/* LE SCANNER LASER (À rajouter ici) */}
+  <div className="animate-laser z-20"></div>
+  
+  <div className="absolute inset-0 bg-gradient-to-tr from-[#00f2ff]/10 to-transparent mix-blend-overlay"></div>
+</div>
 
-              {/* Badge 9H Flottant */}
-              <div className="absolute -bottom-6 -right-6 p-10 rounded-[50px] bg-black dark:bg-white text-white dark:text-black shadow-2xl flex flex-col items-center justify-center animate-bounce-slow border-4 border-[#00f2ff]/30">
-                  <span className="text-3xl font-black italic leading-none">9H+</span>
-                  <span className="text-[8px] font-black tracking-widest uppercase opacity-40">Ceramic_Grade</span>
-              </div>
+
             </div>
           </div>
         </section>
 
         
-
 {/* --- DUAL ECOSYSTEM SECTION (AVANTAGES CLIENTS & PROS) --- */}
-<section id="bento" className={`py-32 px-6 relative overflow-hidden transition-colors duration-500 ${dark ? 'bg-[#0a0a0b]' : 'bg-slate-50/50'}`}>
+<section id="bento" className={`py-20 md:py-32 px-4 md:px-6 relative overflow-hidden transition-colors duration-500 ${dark ? 'bg-[#0a0a0b]' : 'bg-slate-50/50'}`}>
   <div className="max-w-[1400px] mx-auto">
     
-    {/* EN-TÊTE AVEC SWITCH */}
-    <div className="flex flex-col md:flex-row items-center justify-between mb-20 gap-8">
-        <div className="flex items-center gap-6">
-            <h2 className={`text-4xl md:text-5xl font-black italic tracking-tighter uppercase ${dark ? 'text-white' : 'text-black'}`}>
-              L'Écosystème_<span className="text-[#00f2ff]">DetailPlan</span>
-            </h2>
-        </div>
-
-        {/* SWITCH INTERACTIF */}
-        <div className={`p-1.5 rounded-full flex items-center border ${borderClass} ${dark ? 'bg-white/5' : 'bg-black/5'} backdrop-blur-xl w-fit`}>
-            <button 
-                onClick={() => setActivePerspective('client')}
-                className={`px-8 py-3 rounded-full text-[10px] font-black tracking-widest transition-all duration-300 ${activePerspective === 'client' ? 'bg-[#00f2ff] text-black shadow-lg shadow-[#00f2ff]/20' : 'opacity-40 hover:opacity-100'}`}
-            >
-                CLIENT
-            </button>
-            <button 
-                onClick={() => setActivePerspective('pro')}
-                className={`px-8 py-3 rounded-full text-[10px] font-black tracking-widest transition-all duration-300 ${activePerspective === 'pro' ? 'bg-[#bc13fe] text-white shadow-lg shadow-[#bc13fe]/20' : 'opacity-40 hover:opacity-100'}`}
-            >
-                PROFESSIONNEL
-            </button>
-        </div>
+{/* EN-TÊTE AVEC SWITCH : Correction du débordement mobile */}
+<div className="flex flex-col lg:flex-row items-center justify-between mb-12 md:mb-20 gap-8 overflow-hidden">
+    <div className="flex items-center gap-6 text-center lg:text-left w-full">
+        <h2 className={`
+          /* 1. text-[8vw] permet au texte de ne jamais dépasser la largeur de l'écran */
+          /* 2. break-words et whitespace-normal permettent au texte de revenir à la ligne si besoin */
+          text-[8vw] md:text-5xl font-black italic tracking-tighter uppercase leading-tight break-words whitespace-normal w-full
+          ${dark ? 'text-white' : 'text-black'}
+        `}>
+          L'Écosystème<span className="hidden md:inline">_</span><br className="md:hidden" />
+          <span className="text-[#00f2ff]">DetailPlan</span>
+        </h2>
     </div>
 
-    {/* CONTENU DYNAMIQUE */}
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+    {/* SWITCH INTERACTIF : Toujours full width sur mobile */}
+    <div className={`p-1 rounded-full flex items-center border ${borderClass} ${dark ? 'bg-white/5' : 'bg-black/5'} backdrop-blur-xl w-full lg:w-fit`}>
+        <button 
+            onClick={() => setActivePerspective('client')}
+            className={`flex-1 lg:flex-none px-4 md:px-8 py-3 rounded-full text-[9px] md:text-[10px] font-black tracking-widest transition-all duration-300 ${activePerspective === 'client' ? 'bg-[#00f2ff] text-black shadow-lg' : 'opacity-40'}`}
+        >
+            CLIENT
+        </button>
+        <button 
+            onClick={() => setActivePerspective('pro')}
+            className={`flex-1 lg:flex-none px-4 md:px-8 py-3 rounded-full text-[9px] md:text-[10px] font-black tracking-widest transition-all duration-300 ${activePerspective === 'pro' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}
+        >
+            PRO
+        </button>
+    </div>
+</div>
+    {/* CONTENU DYNAMIQUE : Grille adaptative */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
         
-        {/* CARTE PRINCIPALE (Change selon le switch) */}
-        {activePerspective === 'client' ? (
-            <div className={`md:col-span-8 animate-in fade-in slide-in-from-left-8 duration-700 ${glassClass} border ${borderClass} rounded-[60px] p-12 md:p-20 relative overflow-hidden group min-h-[500px] flex flex-col justify-between`}>
-                <div className="absolute top-0 right-0 w-96 h-96 bg-[#00f2ff]/10 rounded-full blur-[100px] group-hover:bg-[#00f2ff]/20 transition-all duration-700"></div>
-                <div className="relative z-10">
-                    <span className="text-[#00f2ff] text-[10px] font-black tracking-[0.5em] uppercase italic mb-6 block">Perspectives_Client</span>
-                    <h3 className={`text-6xl md:text-7xl font-black italic tracking-tighter mb-8 uppercase leading-[0.85] ${dark ? 'text-white' : 'text-black'}`}>
-                      L'EXCELLENCE <br/> <span className="text-[#00f2ff]">EN 3 CLICS.</span>
-                    </h3>
-                    <div className="space-y-6">
-                        {[
-                            { icon: "fa-search-location", text: "Géo-localisation des meilleurs ateliers de detailing." },
-                            { icon: "fa-calendar-check", text: "Réservation instantanée sur l'agenda réel du pro." },
-                            { icon: "fa-shield-alt", text: "Paiement séquestre sécurisé (validation par code)." }
-                        ].map((item, i) => (
-                            <p key={i} className="flex items-center gap-4 text-[14px] font-bold italic tracking-wide group-hover:translate-x-2 transition-transform duration-300">
-                                <i className={`fas ${item.icon} text-[#00f2ff] w-6`}></i>
-                                <span className="opacity-70">{item.text}</span>
-                            </p>
-                        ))}
-                    </div>
-                </div>
+        {/* CARTE PRINCIPALE : On adapte les paddings et les tailles de texte */}
+        <div className={`lg:col-span-8 animate-in fade-in duration-700 ${glassClass} border ${borderClass} rounded-[40px] md:rounded-[60px] p-8 md:p-20 relative overflow-hidden group min-h-[450px] md:min-h-[500px] flex flex-col justify-between transition-all`}>
+            <div className={`absolute top-0 right-0 w-64 md:w-96 h-64 md:h-96 rounded-full blur-[80px] md:blur-[100px] opacity-10 transition-all duration-700 ${activePerspective === 'client' ? 'bg-[#00f2ff]' : 'bg-[#bc13fe]'}`}></div>
+            
+            <div className="relative z-10">
+                <span className={`text-[10px] font-black tracking-[0.5em] uppercase italic mb-6 block ${activePerspective === 'client' ? 'text-[#00f2ff]' : 'text-[#bc13fe]'}`}>
+                    {activePerspective === 'client' ? 'Perspectives_Client' : 'Command_Center_Pro'}
+                </span>
+                
+                {/* Taille fluide pour le titre : évite de casser sur mobile */}
+                <h3 className={`text-[clamp(2.5rem,8vw,4.5rem)] font-black italic tracking-tighter mb-8 uppercase leading-[0.85] ${dark ? 'text-white' : 'text-black'}`}>
+                  {activePerspective === 'client' ? (
+                    <>L'EXCELLENCE <br/> <span className="text-[#00f2ff]">EN 3 CLICS.</span></>
+                  ) : (
+                    <>PILOTEZ VOTRE <br/> <span className="text-[#bc13fe]">STUDIO PRO.</span></>
+                  )}
+                </h3>
 
-                <button onClick={() => setView('explorer')} className="relative z-10 w-fit mt-12 px-12 py-6 bg-white text-black rounded-full font-black text-[11px] tracking-[0.4em] uppercase hover:bg-[#00f2ff] transition-all shadow-2xl active:scale-95">
-                    LANCER MA RECHERCHE
-                </button>
-            </div>
-        ) : (
-            <div className={`md:col-span-8 animate-in fade-in slide-in-from-right-8 duration-700 ${glassClass} border ${borderClass} rounded-[60px] p-12 md:p-20 relative overflow-hidden group min-h-[500px] flex flex-col justify-between`}>
-                <div className="absolute top-0 right-0 w-96 h-96 bg-[#bc13fe]/10 rounded-full blur-[100px] group-hover:bg-[#bc13fe]/20 transition-all duration-700"></div>
-                <div className="relative z-10">
-                    <span className="text-[#bc13fe] text-[10px] font-black tracking-[0.5em] uppercase italic mb-6 block">Command_Center_Pro</span>
-                    <h3 className={`text-6xl md:text-7xl font-black italic tracking-tighter mb-8 uppercase leading-[0.85] ${dark ? 'text-white' : 'text-black'}`}>
-                      PILOTEZ VOTRE <br/> <span className="#bc13fe">STUDIO PRO.</span>
-                    </h3>
-                    <div className="space-y-6">
-                        {[
-                            { icon: "fa-rocket", text: "Déploiement immédiat de votre page vitrine personnalisée." },
-                            { icon: "fa-tasks", text: "Gestion automatisée des créneaux et des prestations." },
-                            { icon: "fa-file-invoice-dollar", text: "Suivi des revenus et paiements sécurisés sans effort." }
-                        ].map((item, i) => (
-                            <p key={i} className="flex items-center gap-4 text-[14px] font-bold italic tracking-wide group-hover:translate-x-2 transition-transform duration-300">
-                                <i className={`fas ${item.icon} text-[#bc13fe] w-6`}></i>
-                                <span className="opacity-70">{item.text}</span>
-                            </p>
-                        ))}
-                    </div>
+                <div className="space-y-4 md:space-y-6">
+                    {(activePerspective === 'client' ? [
+                        { icon: "fa-search-location", text: "Géo-localisation des meilleurs ateliers." },
+                        { icon: "fa-calendar-check", text: "Réservation instantanée sur l'agenda réel." },
+                        { icon: "fa-shield-alt", text: "Paiement séquestre sécurisé par code." }
+                    ] : [
+                        { icon: "fa-rocket", text: "Déploiement immédiat de votre vitrine." },
+                        { icon: "fa-tasks", text: "Gestion automatisée des créneaux." },
+                        { icon: "fa-file-invoice-dollar", text: "Suivi des revenus sans effort." }
+                    ]).map((item, i) => (
+                        <p key={i} className="flex items-start gap-4 text-[13px] md:text-[14px] font-bold italic tracking-wide group-hover:translate-x-2 transition-transform duration-300">
+                            <i className={`fas ${item.icon} mt-1 w-6 ${activePerspective === 'client' ? 'text-[#00f2ff]' : 'text-[#bc13fe]'}`}></i>
+                            <span className="opacity-70">{item.text}</span>
+                        </p>
+                    ))}
                 </div>
-                <button className="relative z-10 w-fit mt-12 px-12 py-6 border-2 border-[#bc13fe] text-[#bc13fe] rounded-full font-black text-[11px] tracking-[0.4em] uppercase hover:bg-[#bc13fe] hover:text-white transition-all shadow-2xl active:scale-95">
-                    DÉPLOYER_MON_UNITÉ
-                </button>
             </div>
-        )}
 
-        {/* COLONNE STATS & RASSURANCE */}
-        <div className="md:col-span-4 flex flex-col gap-6">
+            <button 
+                onClick={() => activePerspective === 'client' ? setView('explorer') : null} 
+                className={`relative z-10 w-full md:w-fit mt-12 px-12 py-6 rounded-full font-black text-[11px] tracking-[0.4em] uppercase transition-all shadow-2xl active:scale-95 ${activePerspective === 'client' ? 'bg-white text-black hover:bg-[#00f2ff]' : 'border-2 border-[#bc13fe] text-[#bc13fe] hover:bg-[#bc13fe] hover:text-white'}`}
+            >
+                {activePerspective === 'client' ? 'LANCER MA RECHERCHE' : 'DÉPLOYER_MON_UNITÉ'}
+            </button>
+        </div>
+
+        {/* COLONNE STATS : Empilée sur mobile, côté sur Desktop */}
+        <div className="lg:col-span-4 flex flex-col gap-4 md:gap-6">
             {[
                 { 
                     val: activePerspective === 'client' ? "4.9/5" : "+28%", 
@@ -234,13 +255,13 @@ const [activePerspective, setActivePerspective] = useState('client');
                     icon: "fa-bolt"
                 }
             ].map((stat, i) => (
-                <div key={i} className={`${glassClass} border ${borderClass} rounded-[40px] p-8 flex items-center gap-6 group hover:scale-[1.02] transition-all duration-500`}>
-                    <div className={`w-16 h-16 rounded-2xl bg-current/5 flex items-center justify-center text-2xl transition-transform group-hover:rotate-12`} style={{ color: stat.color }}>
+                <div key={i} className={`${glassClass} border ${borderClass} rounded-[30px] md:rounded-[40px] p-6 md:p-8 flex items-center gap-6 group hover:scale-[1.02] transition-all duration-500`}>
+                    <div className={`w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-current/5 flex items-center justify-center text-xl md:text-2xl transition-transform group-hover:rotate-12`} style={{ color: stat.color }}>
                         <i className={`fas ${stat.icon}`}></i>
                     </div>
                     <div>
-                        <p className={`text-3xl font-black italic leading-none mb-2 ${dark ? 'text-white' : 'text-black'}`}>{stat.val}</p>
-                        <p className="text-[9px] opacity-30 font-black tracking-[0.2em] uppercase italic">{stat.label}</p>
+                        <p className={`text-2xl md:text-3xl font-black italic leading-none mb-1 md:mb-2 ${dark ? 'text-white' : 'text-black'}`}>{stat.val}</p>
+                        <p className="text-[8px] opacity-30 font-black tracking-[0.2em] uppercase italic">{stat.label}</p>
                     </div>
                 </div>
             ))}
@@ -248,9 +269,9 @@ const [activePerspective, setActivePerspective] = useState('client');
 
     </div>
   </div>
-
-  {/* Glows de fond clarifiés */}
-  <div className={`absolute top-1/2 left-0 w-[500px] h-[500px] rounded-full blur-[150px] opacity-10 pointer-events-none transition-colors duration-1000 ${activePerspective === 'client' ? 'bg-[#00f2ff]' : 'bg-[#bc13fe]'}`}></div>
+  
+  {/* Glows de fond adaptatifs */}
+  <div className={`absolute top-1/2 left-0 w-[300px] md:w-[500px] h-[300px] md:h-[500px] rounded-full blur-[100px] md:blur-[150px] opacity-10 pointer-events-none transition-all duration-1000 ${activePerspective === 'client' ? 'bg-[#00f2ff]' : 'bg-[#bc13fe]'}`}></div>
 </section>
 
         {/* AJOUTER CECI DANS TON BLOC <style> */}
@@ -263,77 +284,73 @@ const [activePerspective, setActivePerspective] = useState('client');
             .animate-scan-slow { animation: scan-slow 4s infinite linear; }
           `}
         </style>
-{/* --- FAQ SECTION : INTELLIGENCE_PROTOCOL --- */}
-<section className="py-40 px-6 max-w-5xl mx-auto relative">
-  {/* Décoration de fond subtile */}
-  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[#bc13fe]/5 blur-[120px] rounded-full pointer-events-none"></div>
+        {/* --- FAQ SECTION : INTELLIGENCE_PROTOCOL --- */}
+<section className="py-20 md:py-40 px-4 md:px-6 max-w-5xl mx-auto relative overflow-hidden">
+  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[#bc13fe]/5 blur-[80px] md:blur-[120px] rounded-full pointer-events-none"></div>
 
   <div className="relative z-10">
-    {/* HEADER AVEC STYLE PROTOCOLE */}
-    <div className="flex items-center gap-8 mb-24">
-      <div className="flex flex-col">
-        <span className={`text-[10px] font-black tracking-[0.5em] mb-2 ${dark ? 'text-[#00f2ff]' : 'text-slate-500'}`}>
+    {/* HEADER */}
+    <div className="flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 mb-16 md:mb-24">
+      <div className="flex flex-col text-center md:text-left w-full">
+        <span className={`text-[8px] md:text-[10px] font-black tracking-[0.4em] mb-2 ${dark ? 'text-[#00f2ff]' : 'text-slate-500'}`}>
           DATABASE_QUERY_V2
         </span>
-        <h2 className={`text-4xl md:text-5xl font-black italic tracking-tighter uppercase ${dark ? 'text-white' : 'text-black'}`}>
-          QUESTIONS_<span className="text-[#bc13fe]">FRÉQUENTES.</span>
+        <h2 className={`text-[9vw] md:text-5xl font-black italic tracking-tighter uppercase leading-[0.9] ${dark ? 'text-white' : 'text-black'}`}>
+          QUESTIONS<span className="text-[#bc13fe]">_FRÉQUENTES.</span>
         </h2>
       </div>
-      <div className={`h-[2px] flex-1 translate-y-4 opacity-20 ${dark ? 'bg-gradient-to-r from-[#00f2ff] to-transparent' : 'bg-black'}`}></div>
     </div>
     
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {[
         {
           q: "SÉCURITÉ DES DONNÉES_?",
-          r: "Toutes les transactions transitent via un tunnel chiffré AES-256. Vos données bancaires sont traitées par notre partenaire de paiement certifié PCI-DSS Level 1. Nous n'avons aucun accès direct à vos informations sensibles.",
-          icon: "fa-shield-halved"
+          r: "Toutes les transactions transitent via un tunnel chiffré AES-256. Vos données bancaires sont traitées par notre partenaire certifié PCI-DSS Level 1.",
+          icon: "fa-solid fa-lock"
         },
         {
-          q: "PROCESSUS_DÉPLOIEMENT_STUDIO_?",
-          r: "Une fois votre configuration terminée, l'algorithme valide vos paramètres en temps réel. Votre studio devient visible sur le réseau mondial DetailPlan en moins de 60 secondes.",
+          q: "DÉPLOIEMENT_STUDIO_?",
+          r: "Votre studio devient visible sur le réseau mondial DetailPlan en moins de 60 secondes après validation de vos paramètres.",
           icon: "fa-microchip"
         },
         {
-          q: "SYNCHRONISATION_TEMPS_RÉEL_?",
-          r: "Notre infrastructure utilise des WebSockets à basse latence. Les modifications de tarifs, de disponibilités ou les nouveaux messages sont répercutés instantanément sur toutes les instances.",
+          q: "SYNCHRO_TEMPS_RÉEL_?",
+          r: "Notre infrastructure utilise des WebSockets à basse latence pour des mises à jour instantanées sur toutes les instances.",
           icon: "fa-sync"
         },
         {
-          q: "POLITIQUE_D'ANNULATION_?",
-          r: "Le client dispose d'un délai défini par le professionnel pour annuler. Passé ce délai, des frais de blocage de créneau peuvent être appliqués pour protéger l'agenda de l'expert.",
+          q: "ANNULATION_?",
+          r: "Le client dispose d'un délai défini par le professionnel. Passé ce délai, des frais de blocage peuvent être appliqués.",
           icon: "fa-ban"
         }
       ].map((item, i) => (
         <details 
           key={i} 
-          className={`group border-2 transition-all duration-500 rounded-[35px] overflow-hidden ${glassClass} 
-            ${dark 
-              ? 'border-white/5 hover:border-[#00f2ff]/30 open:border-[#00f2ff]/50' 
-              : 'border-black/5 hover:border-[#bc13fe]/20 open:border-[#bc13fe]/40 shadow-sm hover:shadow-xl'
-            }`}
+          className={`group border-2 transition-all duration-500 rounded-[25px] md:rounded-[35px] overflow-hidden ${dark ? 'bg-white/5 border-white/5' : 'bg-black/5 border-black/5'}`}
         >
-          <summary className={`flex justify-between items-center p-10 cursor-pointer list-none`}>
-            <div className="flex items-center gap-6">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500
-                ${dark ? 'bg-white/5 border-white/10 group-hover:border-[#00f2ff] text-[#00f2ff]' : 'bg-black/5 border-black/10 group-hover:border-[#bc13fe] text-[#bc13fe]'}
-              `}>
-                <i className={`fas ${item.icon} text-sm`}></i>
-              </div>
-              <span className={`text-[15px] font-black tracking-widest uppercase italic transition-colors 
-                ${dark ? 'text-white/80 group-open:text-[#00f2ff]' : 'text-black/80 group-open:text-[#bc13fe]'}`}>
-                {item.q}
-              </span>
+          <summary className="flex items-center p-4 md:p-8 cursor-pointer list-none outline-none">
+            {/* ICON GAUCHE */}
+            <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl flex items-center justify-center border shrink-0
+              ${dark ? 'bg-black border-white/10 text-[#00f2ff]' : 'bg-white border-black/10 text-[#bc13fe]'}
+            `}>
+              <i className={`fas ${item.icon} text-xs md:text-lg`}></i>
             </div>
+
+            {/* TEXTE (flex-1 pour prendre la place centrale sans pousser l'icône +) */}
+            <span className={`flex-1 px-4 md:px-8 text-[10px] md:text-[15px] font-black tracking-widest uppercase italic
+              ${dark ? 'text-white/80' : 'text-black/80'}`}>
+              {item.q}
+            </span>
             
-            <div className={`w-12 h-12 rounded-full border flex items-center justify-center transition-all duration-500 
-              ${dark ? 'border-white/10 group-open:rotate-180 group-open:bg-[#00f2ff] group-open:text-black' : 'border-black/10 group-open:rotate-180 group-open:bg-[#bc13fe] group-open:text-white'}`}>
+            {/* ICON PLUS (shrink-0 pour rester rond même si le texte est long) */}
+            <div className={`w-8 h-8 md:w-12 md:h-12 rounded-full border flex items-center justify-center transition-all duration-500 shrink-0
+              ${dark ? 'border-white/10 group-open:rotate-45 group-open:bg-[#00f2ff] group-open:text-black' : 'border-black/10 group-open:rotate-45 group-open:bg-[#bc13fe] group-open:text-white'}`}>
               <i className="fas fa-plus text-[10px]"></i>
             </div>
           </summary>
           
-          <div className="px-28 pb-10 animate-in fade-in slide-in-from-top-4 duration-500">
-            <p className={`text-[13px] normal-case font-medium leading-loose italic opacity-60 max-w-2xl
+          <div className="px-6 md:px-28 pb-8 md:pb-10 animate-in fade-in slide-in-from-top-2 duration-300">
+            <p className={`text-[11px] md:text-[14px] normal-case font-medium leading-relaxed italic opacity-60
               ${dark ? 'text-white' : 'text-black'}`}>
               {item.r}
             </p>
@@ -344,93 +361,6 @@ const [activePerspective, setActivePerspective] = useState('client');
   </div>
 </section>
 
-        {/* --- ULTRA-MODERN CYBER FOOTER --- */}
-<footer className={`relative overflow-hidden border-t ${borderClass} pt-24 pb-12 px-6 ${dark ? 'bg-[#050505]' : 'bg-white'}`}>
-  
-  {/* Glows de fond discrets */}
-  <div className="absolute top-0 left-1/4 w-64 h-64 bg-[#00f2ff]/5 blur-[100px] rounded-full"></div>
-  <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-[#bc13fe]/5 blur-[100px] rounded-full"></div>
-
-  <div className="max-w-[1400px] mx-auto relative z-10">
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-16 mb-24">
-      
-      {/* BRAND SECTION */}
-      <div className="md:col-span-4 space-y-8">
-        <h2 className={`text-3xl font-black italic tracking-tighter uppercase ${dark ? 'text-white' : 'text-black'}`}>
-          DETAIL<span className="text-[#00f2ff]">PLAN</span>.
-        </h2>
-        <p className="text-[12px] opacity-40 font-bold leading-relaxed italic uppercase max-w-xs">
-          L'écosystème ultime pour l'esthétique automobile de précision. Connecter l'excellence technique à la passion.
-        </p>
-        <div className="flex gap-4">
-          {['fa-instagram', 'fa-tiktok', 'fa-facebook-f', 'fa-x-twitter'].map((icon, i) => (
-            <a key={i} href="#" className={`w-10 h-10 rounded-xl border ${borderClass} flex items-center justify-center opacity-40 hover:opacity-100 hover:border-[#00f2ff] hover:text-[#00f2ff] transition-all`}>
-              <i className={`fab ${icon} text-sm`}></i>
-            </a>
-          ))}
-        </div>
-      </div>
-
-      {/* NAVIGATION SECTIONS */}
-      <div className="md:col-span-2 space-y-6">
-        <p className="text-[10px] font-black tracking-[0.4em] text-[#bc13fe] uppercase italic">Navigation_</p>
-        <ul className="space-y-4 text-[11px] font-black italic uppercase">
-          {['Explorer', 'Services', 'Pricing', 'Network'].map((item) => (
-            <li key={item}>
-              <a href="#" className="opacity-40 hover:opacity-100 hover:text-[#00f2ff] transition-all">{item}</a>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="md:col-span-2 space-y-6">
-        <p className="text-[10px] font-black tracking-[0.4em] text-[#bc13fe] uppercase italic">Legal_</p>
-        <ul className="space-y-4 text-[11px] font-black italic uppercase">
-          {['Mentions', 'Confidentialité', 'CGU', 'Cookies'].map((item) => (
-            <li key={item}>
-              <a href="#" className="opacity-40 hover:opacity-100 hover:text-[#00f2ff] transition-all">{item}</a>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* NEWSLETTER SECTION */}
-      <div className="md:col-span-4 space-y-8">
-        <p className="text-[10px] font-black tracking-[0.4em] text-[#00f2ff] uppercase italic">Newsletter_Update</p>
-        <div className={`p-1 rounded-2xl border ${borderClass} flex gap-2 ${glassClass}`}>
-          <input 
-            type="email" 
-            placeholder="SYSTEM_MAIL_ID" 
-            className="bg-transparent flex-1 px-6 py-4 text-[10px] font-black italic uppercase outline-none"
-          />
-          <button className="px-6 py-4 bg-white text-black dark:bg-white dark:text-black rounded-xl font-black text-[9px] tracking-widest uppercase hover:bg-[#00f2ff] transition-all">
-            Join_
-          </button>
-        </div>
-        <p className="text-[8px] opacity-20 font-bold uppercase italic">
-          En vous inscrivant, vous acceptez de recevoir nos logs d'opérations et mises à jour techniques.
-        </p>
-      </div>
-    </div>
-
-    {/* BOTTOM BAR */}
-    <div className={`pt-12 border-t ${borderClass} flex flex-col md:flex-row justify-between items-center gap-6`}>
-      <p className="text-[9px] font-black tracking-[0.2em] opacity-20 uppercase italic">
-        © 2026 DETAILPLAN_INFRASTRUCTURE. TOUS DROITS RÉSERVÉS.
-      </p>
-      
-      <div className="flex items-center gap-8">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-          <span className="text-[8px] font-black opacity-30 tracking-widest uppercase italic">All_Systems_Nominal</span>
-        </div>
-        <p className="text-[8px] font-black opacity-30 tracking-widest uppercase italic">
-          V.2.4.0_BUILD
-        </p>
-      </div>
-    </div>
-  </div>
-</footer>
       </div>
     </>
 

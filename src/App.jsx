@@ -5,17 +5,23 @@ import { supabase } from './lib/supabase';
 
 // --- IMPORTS DES COMPOSANTS ET PAGES ---
 import BookingModal from './components/BookingModal';
+import Footer from './components/Footer';
 import Navbar from './components/Navbar';
+import ScrollToTop from './components/ScrollToTop'; // <--- NOUVEL IMPORT
 import Explorer from './pages/Explorer';
 import Landing from './pages/Landing';
+import MentionsLegales from './pages/MentionsLegales';
 import MesReservations from './pages/MesReservations';
+import Privacy from './pages/Privacy';
 import ProDashboard from './pages/ProDashboard';
 import ProPublicProfile from './pages/ProPublicProfile';
+import Terms from './pages/Terms';
+
 
 export default function App() {
   // États Globaux
   const [session, setSession] = useState(null);
-  const [view, setView] = useState('landing'); // 'landing', 'explorer', 'dashboard', 'mes-reservations'
+  const [view, setView] = useState('landing'); 
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [publicDetailers, setPublicDetailers] = useState([]);
   const [selectedPro, setSelectedPro] = useState(null);
@@ -27,22 +33,19 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Initialisation et Écoute de la session Supabase
+  // Initialisation
   useEffect(() => {
     AOS.init({ duration: 1200, once: true });
     
-    // 1. Récupérer la session actuelle
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
 
-    // 2. Écouter les changements d'état (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (!s) setView('landing'); 
     });
 
-    // 3. Charger les professionnels pour l'explorateur
     const fetchDetailers = async () => {
       const { data } = await supabase.from('profiles_pro').select('*').eq('is_visible', true);
       if (data) setPublicDetailers(data);
@@ -52,13 +55,17 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Gestion de l'authentification (Login / SignUP)
+  // Remonter en haut de page à chaque changement de vue
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [view]);
+
   const handleAuth = async (role = 'client') => {
     const { error } = authMode === 'signup' 
       ? await supabase.auth.signUp({ 
           email, 
           password, 
-          options: { data: { role: role } } // 'pro' ou 'client'
+          options: { data: { role: role } } 
         }) 
       : await supabase.auth.signInWithPassword({ email, password });
     
@@ -70,13 +77,9 @@ export default function App() {
     }
   };
 
-  // Déterminer le rôle de l'utilisateur connecté
-  const userRole = session?.user?.user_metadata?.role;
-
   return (
     <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden font-['Outfit'] italic uppercase text-left ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-[#fcfcfc] text-black'}`}>
       
-      {/* NAVBAR : Gère le menu et les accès selon le rôle */}
       <Navbar 
         setView={setView} 
         view={view} 
@@ -86,32 +89,36 @@ export default function App() {
         onAuthClick={() => { setAuthMode('login'); setShowAuth(true); }} 
       />
 
-      {/* SYSTÈME DE ROUTAGE : Affichage conditionnel des pages */}
-<main className="relative z-10">
-  {/* Page d'accueil */}
-  {view === 'landing' && (
-    <Landing dark={isDarkMode} setView={setView} handleSearch={() => setView('explorer')} />
-  )}
+      <main className="relative z-10 min-h-[80vh]">
+        {view === 'landing' && (
+          <Landing dark={isDarkMode} setView={setView} handleSearch={() => setView('explorer')} />
+        )}
 
-  {/* Page de recherche */}
-  {view === 'explorer' && (
-    <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />
-  )}
+        {view === 'explorer' && (
+          <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />
+        )}
 
-  {/* --- ESPACE CLIENT (C'EST ICI QUE CA SE JOUE) --- */}
-  {view === 'mes-reservations' && (
-    <MesReservations session={session} dark={isDarkMode} />
-  )}
+        {view === 'mes-reservations' && (
+          <MesReservations session={session} dark={isDarkMode} />
+        )}
 
-  {/* ESPACE PRO */}
-  {view === 'dashboard' && (
-    <ProDashboard session={session} dark={isDarkMode} />
-  )}
-</main>
+        {view === 'dashboard' && (
+          <ProDashboard session={session} dark={isDarkMode} />
+        )}
 
-      {/* --- MODALS & OVERLAYS --- */}
+        {/* PAGES LÉGALES */}
+        {view === 'mentions' && <MentionsLegales dark={isDarkMode} />}
+        {view === 'privacy' && <Privacy dark={isDarkMode} />}
+        {view === 'terms' && <Terms dark={isDarkMode} />}
+      </main>
 
-      {/* Profil Public du Pro (quand on clique sur "Consulter Profil") */}
+      <Footer dark={isDarkMode} setView={setView} />
+
+      {/* BOUTON REMONTER EN HAUT */}
+      <ScrollToTop dark={isDarkMode} />
+
+      {/* --- MODALS --- */}
+
       {selectedPro && (
         <ProPublicProfile 
           pro={selectedPro} 
@@ -121,16 +128,16 @@ export default function App() {
         />
       )}
 
-{isBookingOpen && selectedPro && (
-  <BookingModal 
-    pro={selectedPro} 
-    session={session} 
-    onClose={() => setIsBookingOpen(false)} 
-    dark={isDarkMode}
-    setView={setView} // <--- TRÈS IMPORTANT : Ajoute cette ligne !
-  />
-)}
-      {/* Modal d'Authentification (Login/Register) */}
+      {isBookingOpen && selectedPro && (
+        <BookingModal 
+          pro={selectedPro} 
+          session={session} 
+          onClose={() => setIsBookingOpen(false)} 
+          dark={isDarkMode}
+          setView={setView}
+        />
+      )}
+
       {showAuth && (
         <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
             <div className={`w-full max-w-sm border p-12 rounded-[60px] shadow-2xl relative ${isDarkMode?'bg-white/5 border-white/10':'bg-white border-black/5'}`}>

@@ -1,7 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
+/* Garde tes styles personnalisés (comme les polices Outfit, etc.) en dessous */
 :root {
   margin: 0;
   padding: 0;
