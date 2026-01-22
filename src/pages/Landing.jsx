@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import voitureHero from '../img/car.jpg'; // Ajuste le nom et l'extension (.jpg, .png, etc.)
+import voitureHero from '../img/car.webp'; // Ajuste le nom et l'extension (.jpg, .png, etc.)
 
 
 export default function Landing({ dark, setView, searchVille, setSearchVille, handleSearch }) {
