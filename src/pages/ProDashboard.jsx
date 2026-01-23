@@ -4,7 +4,8 @@ import {
   format,
   isSameDay,
   startOfWeek,
-  subWeeks
+  subDays,
+  subWeeks,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { uploadImage } from '../utils/storage';
 
 export default function ProDashboard({ session, dark }) {
+  // --- ÉTATS ---
   const [profile, setProfile] = useState(null);
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -20,19 +22,24 @@ export default function ProDashboard({ session, dark }) {
   const [activeChat, setActiveChat] = useState(null);
   const [activeTab, setActiveTab] = useState('agenda');
   const [statusFilter, setStatusFilter] = useState('tous');
+  const [viewMode, setViewMode] = useState('workWeek'); // 'day' ou 'workWeek'
+  const [currentDate, setCurrentDate] = useState(new Date());
   const scrollContainerRef = useRef(null);
 
-  const [viewMode, setViewMode] = useState('workWeek');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
+  // Génération des heures de 07h à 21h
   const hours = Array.from({ length: 15 }, (_, i) => (i + 7).toString().padStart(2, '0') + ':00');
 
-  const SPECIALITIES_LIST = [
-  "Lavage Manuel", "Polissage", "Protection Céramique", 
-  "Pose de PPF", "Nettoyage Intérieur", "Rénovation Cuir", 
-  "Optiques de Phare", "Ciel étoilé", "Vitres Teintées"
-];
+  // --- STATS FINANCIÈRES (Argument de vente SaaS) ---
+  const stats = {
+    escrow: appointments
+      .filter(a => a.payment_status === 'escrow' && a.status !== 'annulé')
+      .reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+    released: appointments
+      .filter(a => a.payment_status === 'released')
+      .reduce((sum, a) => sum + Number(a.total_price || 0), 0)
+  };
 
+  // --- LOGIQUE DE NAVIGATION TEMPORELLE ---
   const displayedDays = (() => {
     if (viewMode === 'day') return [currentDate];
     const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -40,6 +47,19 @@ export default function ProDashboard({ session, dark }) {
     return Array.from({ length: daysCount }, (_, i) => addDays(start, i));
   })();
 
+  const handlePrev = () => {
+    if (viewMode === 'day') setCurrentDate(subDays(currentDate, 1));
+    else setCurrentDate(subWeeks(currentDate, 1));
+  };
+
+  const handleNext = () => {
+    if (viewMode === 'day') setCurrentDate(addDays(currentDate, 1));
+    else setCurrentDate(addWeeks(currentDate, 1));
+  };
+
+  const goToToday = () => setCurrentDate(new Date());
+
+  // --- RÉCUPÉRATION DES DONNÉES ---
   const fetchAppointments = useCallback(async () => {
     const { data: apps, error } = await supabase
         .from('appointments')
@@ -59,153 +79,158 @@ export default function ProDashboard({ session, dark }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // --- SCROLL AUTO SUR L'HEURE ACTUELLE ---
+  useEffect(() => {
+    if (activeTab === 'agenda' && scrollContainerRef.current) {
+      const currentHour = new Date().getHours();
+      const targetRow = document.querySelector(`[data-hour="${currentHour.toString().padStart(2, '0')}:00"]`);
+      if (targetRow) {
+        targetRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+  }, [activeTab]);
+
   const updateStatus = async (appId, newStatus) => {
     const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', appId);
     if (!error) fetchAppointments();
   };
 
-  // TRI ET FILTRAGE : Plus récent en haut + Filtre par statut
   const processedMissions = appointments
     .filter(app => statusFilter === 'tous' || app.status === statusFilter)
-    .sort((a, b) => {
-      const dateA = new Date(`${a.appointment_date}T${a.appointment_time}`);
-      const dateB = new Date(`${b.appointment_date}T${b.appointment_time}`);
-      return dateB - dateA;
-    });
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const glass = dark ? 'bg-white/[0.03] border-white/10' : 'bg-black/[0.03] border-black/10';
 
-  if (loading) return <div className="pt-40 text-center animate-pulse font-black italic uppercase tracking-widest text-[#00f2ff]">Sync_Command_Center...</div>;
+  if (loading) return <div className="pt-40 text-center animate-pulse font-black italic uppercase tracking-[0.4em] text-[#00f2ff]">Sync_Command_Center...</div>;
 
   return (
-    <div className={`pt-24 md:pt-40 pb-20 px-4 md:px-12 max-w-[1800px] mx-auto font-black italic uppercase transition-all ${dark ? 'text-white' : 'text-black'}`}>
+    <div className={`pt-24 md:pt-40 pb-20 px-4 md:px-12 max-w-[1800px] mx-auto font-black italic uppercase transition-all text-left ${dark ? 'text-white' : 'text-black'}`}>
       
       {isConfiguring ? (
         <ProCMS supabase={supabase} profile={profile} session={session} dark={dark} onComplete={() => { setIsConfiguring(false); fetchData(); }} />
       ) : (
         <div className="animate-in fade-in duration-700">
           
-          {/* HEADER */}
-          <div className="flex flex-col lg:flex-row justify-between items-center lg:items-end mb-12 md:mb-16 gap-8 text-center lg:text-left">
-            <div className="space-y-4 w-full lg:w-auto">
-              <div className="flex flex-col md:flex-row items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#bc13fe] flex items-center justify-center shadow-lg shadow-[#bc13fe]/30 shrink-0">
+          {/* HEADER AVEC FINANCES & NAVIGATION */}
+          <div className="flex flex-col lg:flex-row justify-between items-center lg:items-end mb-12 gap-8">
+            <div className="space-y-6 w-full lg:w-auto">
+              <div className="flex items-center gap-4 justify-center lg:justify-start">
+                <div className="w-12 h-12 rounded-2xl bg-[#bc13fe] flex items-center justify-center shadow-lg shadow-[#bc13fe]/30">
                   <i className="fas fa-terminal text-white"></i>
                 </div>
-                <h2 className="text-4xl md:text-6xl font-black tracking-tighter italic leading-none">COMMAND_<span className="text-[#bc13fe]">UNIT</span></h2>
+                <h2 className="text-4xl md:text-6xl tracking-tighter italic leading-none">COMMAND_<span className="text-[#bc13fe]">UNIT</span></h2>
               </div>
               
-              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-                <div className={`flex items-center p-1 rounded-full border ${glass} backdrop-blur-md w-fit`}>
-                   <button onClick={() => setCurrentDate(subWeeks(currentDate, 1))} className="w-10 h-10 flex items-center justify-center hover:text-[#00f2ff] transition-all text-xl">←</button>
-                   <button onClick={() => setCurrentDate(new Date())} className="px-4 text-[9px] opacity-50 hover:opacity-100 uppercase">Auj.</button>
-                   <button onClick={() => setCurrentDate(addWeeks(currentDate, 1))} className="w-10 h-10 flex items-center justify-center hover:text-[#00f2ff] transition-all">→</button>
-                </div>
-                <span className="text-lg md:text-xl lowercase first-letter:uppercase">{format(currentDate, 'MMMM yyyy', { locale: fr })}</span>
+              <div className="flex flex-wrap gap-6 justify-center lg:justify-start">
+                  <div className="border-l-2 border-[#00f2ff] pl-4">
+                      <p className="text-[8px] opacity-40 tracking-widest">EN_SÉQUESTRE</p>
+                      <p className="text-xl font-black text-[#00f2ff]">{stats.escrow}€</p>
+                  </div>
+                  <div className="border-l-2 border-[#bc13fe] pl-4">
+                      <p className="text-[8px] opacity-40 tracking-widest">CA_LIBÉRÉ</p>
+                      <p className="text-xl font-black text-[#bc13fe]">{stats.released}€</p>
+                  </div>
               </div>
             </div>
 
+            {/* BARRE DE CONTRÔLE FLUIDE */}
             <div className="flex flex-col gap-4 items-center lg:items-end w-full lg:w-auto">
-                <div className={`p-1 rounded-full border ${glass} flex backdrop-blur-xl w-full sm:w-fit overflow-x-auto no-scrollbar`}>
-                    <button onClick={() => setViewMode('day')} className={`flex-1 sm:flex-none px-4 md:px-6 py-2 rounded-full text-[9px] transition-all whitespace-nowrap ${viewMode === 'day' ? 'bg-[#00f2ff] text-black' : 'opacity-40'}`}>Jour</button>
-                    <button onClick={() => setViewMode('workWeek')} className={`flex-1 sm:flex-none px-4 md:px-6 py-2 rounded-full text-[9px] transition-all whitespace-nowrap ${viewMode === 'workWeek' ? 'bg-[#00f2ff] text-black' : 'opacity-40'}`}>Semaine_Pro</button>
-                    <button onClick={() => setViewMode('fullWeek')} className={`flex-1 sm:flex-none px-4 md:px-6 py-2 rounded-full text-[9px] transition-all whitespace-nowrap ${viewMode === 'fullWeek' ? 'bg-[#00f2ff] text-black' : 'opacity-40'}`}>Semaine_7j</button>
+                <div className={`flex items-center p-1 rounded-full border ${glass} backdrop-blur-md`}>
+                   <button onClick={handlePrev} className="w-10 h-10 flex items-center justify-center hover:text-[#00f2ff] transition-all text-xl">←</button>
+                   <button onClick={goToToday} className="px-6 text-[9px] font-black tracking-widest border-x border-white/10">AUJ.</button>
+                   <button onClick={handleNext} className="w-10 h-10 flex items-center justify-center hover:text-[#00f2ff] transition-all text-xl">→</button>
                 </div>
                 <div className={`p-1 rounded-full border ${glass} flex backdrop-blur-xl w-full sm:w-fit overflow-x-auto no-scrollbar`}>
-                    <button onClick={() => setActiveTab('missions')} className={`flex-1 sm:flex-none px-4 md:px-8 py-3 rounded-full text-[9px] transition-all whitespace-nowrap ${activeTab === 'missions' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>Missions</button>
-                    <button onClick={() => setActiveTab('agenda')} className={`flex-1 sm:flex-none px-4 md:px-8 py-3 rounded-full text-[9px] transition-all whitespace-nowrap ${activeTab === 'agenda' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>Master_Agenda</button>
-                    <button onClick={() => setIsConfiguring(true)} className="flex-1 sm:flex-none px-4 md:px-8 py-3 rounded-full text-[9px] border border-white/10 hover:bg-white hover:text-black transition-all">Settings</button>
+                    <button onClick={() => setViewMode('day')} className={`flex-1 sm:flex-none px-6 py-2 rounded-full text-[9px] transition-all ${viewMode === 'day' ? 'bg-[#00f2ff] text-black' : 'opacity-40'}`}>Jour</button>
+                    <button onClick={() => setViewMode('workWeek')} className={`flex-1 sm:flex-none px-6 py-2 rounded-full text-[9px] transition-all ${viewMode === 'workWeek' ? 'bg-[#00f2ff] text-black' : 'opacity-40'}`}>Semaine</button>
+                    <button onClick={() => setActiveTab('missions')} className={`flex-1 sm:flex-none px-8 py-3 rounded-full text-[9px] transition-all ${activeTab === 'missions' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>Missions</button>
+                    <button onClick={() => setActiveTab('agenda')} className={`flex-1 sm:flex-none px-8 py-3 rounded-full text-[9px] transition-all ${activeTab === 'agenda' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>Master_Agenda</button>
+                    <button onClick={() => setIsConfiguring(true)} className="flex-1 sm:flex-none px-8 py-3 rounded-full text-[9px] border border-white/10 hover:bg-white hover:text-black transition-all">Settings</button>
                 </div>
             </div>
           </div>
 
-          {/* TAB: AGENDA */}
-          {activeTab === 'agenda' && (
-            <div ref={scrollContainerRef} className={`rounded-[30px] md:rounded-[60px] border ${glass} overflow-hidden flex flex-col h-[600px] md:h-[750px] shadow-2xl backdrop-blur-3xl animate-in slide-in-from-right-8`}>
-              <div className="flex-1 overflow-auto custom-scrollbar">
-                <div className="min-w-[800px] lg:min-w-full">
-                  <table className="w-full border-collapse table-fixed">
-                    <thead>
-                      <tr className="sticky top-0 z-30">
-                        <th className={`p-4 border-b ${glass} text-left w-24 sticky left-0 z-50 ${dark ? 'bg-[#0a0a0a]' : 'bg-[#fafafa]'}`}><span className="text-[9px] opacity-40">TIME</span></th>
-                        {displayedDays.map(day => (
-                          <th key={day.toString()} className={`p-4 border-b ${glass} min-w-[150px] text-center ${isSameDay(day, new Date()) ? 'bg-[#00f2ff]/10' : ''}`}>
-                            <p className="text-[11px] tracking-widest text-[#00f2ff]">{format(day, 'EEE dd', { locale: fr })}</p>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hours.map((hour) => (
-                        <tr key={hour} data-hour={hour}>
-                          <td className={`p-4 border-b border-white/5 sticky left-0 z-20 font-black text-[11px] opacity-30 ${dark ? 'bg-[#0a0a0a]' : 'bg-[#fafafa]'}`}>{hour}</td>
-                          {displayedDays.map(day => {
-                            const rdv = appointments.find(a => a.appointment_date === format(day, 'yyyy-MM-dd') && a.appointment_time.startsWith(hour.split(':')[0]) && a.status === 'confirmé');
-                            return (
-                              <td key={day.toString()} className={`border-b border-white/5 border-l h-24 relative ${isSameDay(day, new Date()) ? 'bg-[#00f2ff]/5' : ''}`}>
-                                {rdv && (
-                                  <div className="absolute inset-1 bg-white text-black p-3 rounded-[15px] md:rounded-[20px] shadow-xl flex flex-col justify-between hover:bg-[#00f2ff] transition-all cursor-pointer overflow-hidden z-10">
-                                      <div className="text-left"><p className="text-[9px] md:text-[10px] font-black leading-tight truncate">{rdv.client_name}</p><p className="text-[7px] opacity-60 uppercase font-bold truncate">{rdv.service_type}</p></div>
-                                      <span className="text-[7px] md:text-[8px] font-black opacity-40 self-end">@{rdv.appointment_time}</span>
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: MISSIONS */}
+          {/* TAB: AGENDA ULTRA-FLUIDE */}
+{/* TAB: AGENDA COMPACT "ONE-LOOK" */}
+{activeTab === 'agenda' && (
+  <div className="animate-in fade-in zoom-in-95 duration-500">
+    <div className={`rounded-[30px] md:rounded-[50px] border ${glass} overflow-hidden flex flex-col h-[calc(100vh-250px)] shadow-2xl backdrop-blur-3xl`}>
+      <div className="flex-1 overflow-auto custom-scrollbar">
+        <div className="min-w-[800px] lg:min-w-full h-full">
+          <table className="w-full border-collapse table-fixed h-full">
+            <thead>
+              <tr className="sticky top-0 z-40">
+                <th className={`p-2 border-b ${glass} w-16 sticky left-0 z-50 ${dark ? 'bg-[#050505]' : 'bg-white'}`}>
+                  <span className="text-[7px] opacity-30 tracking-tighter">TIME</span>
+                </th>
+                {displayedDays.map(day => (
+                  <th key={day.toString()} className={`p-2 border-b ${glass} text-center ${isSameDay(day, new Date()) ? 'bg-[#00f2ff]/5' : ''}`}>
+                    <p className={`text-[9px] font-black tracking-widest ${isSameDay(day, new Date()) ? 'text-[#00f2ff]' : 'opacity-40'}`}>
+                      {format(day, 'EEE dd', { locale: fr }).toUpperCase()}
+                    </p>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* On réduit la liste des heures pour se concentrer sur l'essentiel (ex: 8h-19h) */}
+              {hours.filter(h => parseInt(h) >= 8 && parseInt(h) <= 19).map((hour) => {
+                const isCurrentHour = new Date().getHours().toString().padStart(2, '0') + ':00' === hour;
+                return (
+                  <tr key={hour} className="group h-12"> {/* Hauteur fixe réduite à 12 (48px env) */}
+                    <td className={`p-2 border-b border-white/5 sticky left-0 z-30 font-black text-[9px] transition-all ${isCurrentHour ? 'text-[#00f2ff]' : 'opacity-10 group-hover:opacity-100'} ${dark ? 'bg-[#050505]' : 'bg-white'}`}>
+                      {hour}
+                    </td>
+                    {displayedDays.map(day => {
+                      const rdv = appointments.find(a => 
+                        a.appointment_date === format(day, 'yyyy-MM-dd') && 
+                        a.appointment_time.startsWith(hour.split(':')[0]) && 
+                        a.status === 'confirmé'
+                      );
+                      return (
+                        <td key={day.toString()} className={`border-b border-white/5 border-l border-white/5 relative transition-colors hover:bg-white/[0.01]`}>
+                          {isCurrentHour && isSameDay(day, new Date()) && (
+                            <div className="absolute top-0 left-0 w-full h-[1px] bg-[#00f2ff] shadow-[0_0_10px_#00f2ff] z-20"></div>
+                          )}
+                          {rdv && (
+                            <div 
+                              onClick={() => setActiveChat({ id: rdv.client_id, name: rdv.client_name })}
+                              className="absolute inset-[2px] bg-white text-black p-1.5 rounded-xl shadow-lg flex flex-col justify-center hover:scale-[1.02] hover:bg-[#00f2ff] transition-all cursor-pointer z-10 overflow-hidden"
+                            >
+                              <p className="text-[8px] font-black leading-none truncate uppercase tracking-tighter">{rdv.client_name?.split('@')[0]}</p>
+                              <p className="text-[6px] font-bold opacity-60 truncate uppercase">{rdv.service_selected}</p>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+)}          {/* TAB: MISSIONS (Avec Validation du Code) */}
           {activeTab === 'missions' && (
             <div className="space-y-8 animate-in slide-in-from-bottom-8">
-              
-              <div className="flex flex-col md:flex-row justify-between items-center gap-6 p-6 rounded-[30px] border border-white/5 bg-white/5 backdrop-blur-xl">
-                  <div className="flex items-center gap-4">
-                      <i className="fas fa-filter text-[#bc13fe] opacity-50"></i>
-                      <span className="text-[10px] font-black tracking-widest uppercase">Tri_Par_Statut</span>
-                  </div>
-                  
-                  <div className="flex gap-2 overflow-x-auto no-scrollbar w-full md:w-auto pb-2 md:pb-0">
-                      {['tous', 'en attente', 'confirmé', 'terminé', 'annulé'].map((status) => (
-                          <button
-                              key={status}
-                              onClick={() => setStatusFilter(status)}
-                              className={`px-6 py-2.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap transition-all border ${
-                                  statusFilter === status 
-                                  ? 'bg-[#bc13fe] text-white border-[#bc13fe] shadow-lg shadow-[#bc13fe]/20' 
-                                  : 'border-white/10 opacity-40 hover:opacity-100'
-                              }`}
-                          >
-                              {status === 'tous' ? 'TOUTES' : status.replace('_', ' ')}
-                          </button>
-                      ))}
-                  </div>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar p-2">
+                  {['tous', 'en attente', 'confirmé', 'terminé', 'annulé'].map((status) => (
+                      <button key={status} onClick={() => setStatusFilter(status)} className={`px-6 py-2.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap border ${statusFilter === status ? 'bg-[#bc13fe] text-white' : 'border-white/10 opacity-40'}`}>
+                          {status}
+                      </button>
+                  ))}
               </div>
 
               <div className="grid grid-cols-1 gap-6">
-                {processedMissions.length > 0 ? (
-                  processedMissions.map((app) => (
-                    <MissionCard 
-                        key={app.id} 
-                        app={app} 
-                        dark={dark} 
-                        glass={glass} 
-                        updateStatus={updateStatus} 
-                        setActiveChat={setActiveChat}
-                    />
-                  ))
-                ) : (
-                  <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-[40px] opacity-20">
-                      <i className="fas fa-inbox text-4xl mb-4 block"></i>
-                      <p className="text-[10px] tracking-[0.5em]">SIGNAL_VIDE: AUCUNE_MISSION</p>
-                  </div>
-                )}
+                {processedMissions.map((app) => (
+                  <MissionCard 
+                    key={app.id} app={app} dark={dark} glass={glass} 
+                    updateStatus={updateStatus} setActiveChat={setActiveChat} fetchAppointments={fetchAppointments} 
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -217,7 +242,8 @@ export default function ProDashboard({ session, dark }) {
   );
 }
 
-function MissionCard({ app, dark, glass, updateStatus, setActiveChat }) {
+// --- SOUS-COMPOSANT MISSION CARD (Gère la validation du code) ---
+function MissionCard({ app, dark, glass, updateStatus, setActiveChat, fetchAppointments }) {
     const [vCode, setVCode] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
 
@@ -230,102 +256,53 @@ function MissionCard({ app, dark, glass, updateStatus, setActiveChat }) {
             try {
                 const { error } = await supabase.from('appointments').update({ status: 'terminé', payment_status: 'released' }).eq('id', app.id);
                 if (error) throw error;
-                alert("PAIEMENT LIBÉRÉ !");
-                await updateStatus(app.id, 'terminé'); 
-            } catch (err) {
-                alert("Erreur : " + err.message);
-            } finally {
-                setIsVerifying(false);
-            }
-        } else {
-            alert("CODE INVALIDE.");
-        }
-    };
-
-    const getStatusStyles = () => {
-        switch (app.status) {
-            case 'confirmé': return 'border-green-500 text-green-500 shadow-[0_0_10px_rgba(34,197,94,0.2)]';
-            case 'annulé': return 'border-red-500 text-red-500 bg-red-500/5';
-            case 'refusé': return 'border-red-500 text-red-500 opacity-50';
-            case 'terminé': return 'border-[#00f2ff] text-[#00f2ff]';
-            default: return 'border-[#bc13fe] text-[#bc13fe] animate-pulse';
-        }
+                alert("SYSTÈME_SÉCURISÉ : Paiement libéré !");
+                fetchAppointments();
+            } catch (err) { alert(err.message); } finally { setIsVerifying(false); setVCode(''); }
+        } else { alert("CODE_INVALIDE."); }
     };
 
     return (
-        <div className={`p-6 md:p-10 rounded-[35px] md:rounded-[50px] border ${glass} flex flex-col gap-6 md:gap-8 group transition-all duration-500 text-left 
-            ${app.status === 'annulé' ? 'border-red-500/40 bg-red-500/5' : 'hover:border-[#00f2ff]/50'}`}>
-          
+        <div className={`p-6 md:p-10 rounded-[35px] md:rounded-[50px] border ${glass} flex flex-col gap-6 transition-all hover:border-[#00f2ff]/30 text-left`}>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div className="flex items-center gap-4 md:gap-8 w-full md:w-auto">
-              <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex shrink-0 items-center justify-center text-black font-black text-xl shadow-lg 
-                ${app.status === 'annulé' ? 'bg-red-500' : 'bg-gradient-to-br from-[#bc13fe] to-[#00f2ff]'}`}>
-                {app.status === 'annulé' ? <i className="fas fa-ban text-white"></i> : (app.client_name ? app.client_name[0] : 'U')}
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-black font-black bg-[#bc13fe]">
+                {app.client_name ? app.client_name[0].toUpperCase() : 'U'}
               </div>
-              
               <div className="min-w-0 flex-1">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 md:gap-3">
-                    <p className="text-lg md:text-xl font-black tracking-tighter truncate leading-none uppercase">{app.client_name?.split('@')[0]}</p>
-                    <span className={`w-fit px-3 py-1 rounded-full text-[7px] border font-black ${getStatusStyles()}`}>
-                        {app.status ? app.status.toUpperCase() : 'INCONNU'}
-                    </span>
+                <div className="flex items-center gap-3">
+                    <p className="text-xl font-black italic uppercase">{app.client_name?.split('@')[0]}</p>
+                    <span className={`px-3 py-1 rounded-full text-[7px] border font-black ${app.status === 'confirmé' ? 'text-green-500' : 'text-[#bc13fe]'}`}>{app.status?.toUpperCase()}</span>
                 </div>
-                <p className="text-[9px] text-[#00f2ff] tracking-[0.2em] font-bold uppercase mt-1 truncate">{app.service_type || 'CUSTOM_PROTOCOL'}</p>
+                <p className="text-[9px] text-[#00f2ff] font-bold uppercase mt-1 italic">{app.service_selected} — {app.total_price}€</p>
               </div>
             </div>
-
-            <div className="flex justify-between md:flex-col items-center md:items-end w-full md:w-auto border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
-              <div className="text-left md:text-right">
-                <p className="text-sm md:text-lg font-black tracking-tighter">{app.appointment_date}</p>
-                <p className="text-[10px] opacity-40 italic uppercase">H_START: {app.appointment_time}</p>
-              </div>
-              <button 
-                onClick={() => setActiveChat({ id: app.client_id, name: app.client_name })} 
-                className="md:mt-4 w-12 h-12 md:w-14 md:h-14 border border-white/10 rounded-full flex items-center justify-center hover:bg-white hover:text-black transition-all shadow-lg"
-              >
-                <i className="fas fa-comment-dots"></i>
-              </button>
+            <div className="text-left md:text-right">
+                <p className="text-lg font-black italic uppercase">{app.appointment_date}</p>
+                <p className="text-[10px] opacity-40 uppercase font-black italic">@{app.appointment_time}</p>
             </div>
           </div>
 
-          {app.status === 'en attente' && (
-            <div className="flex gap-3 w-full animate-in slide-in-from-bottom-2">
-              <button onClick={() => updateStatus(app.id, 'confirmé')} className="flex-1 bg-[#00f2ff] text-black py-4 rounded-2xl font-black text-[10px] tracking-widest hover:scale-[1.02] transition-all">ACCEPTER</button>
-              <button onClick={() => updateStatus(app.id, 'refusé')} className="px-6 border border-red-500 text-red-500 py-4 rounded-2xl font-black text-[10px] hover:bg-red-500 hover:text-white transition-all">REFUSER</button>
+          {app.status === 'confirmé' && app.payment_status === 'escrow' && (
+            <div className="mt-4 p-6 rounded-[30px] border-2 border-dashed border-[#00f2ff]/20 bg-[#00f2ff]/5 flex flex-col items-center gap-4">
+              <p className="text-[9px] font-black text-[#00f2ff] tracking-widest">VALIDATION_SÉQUESTRE</p>
+              <div className="flex gap-3 w-full max-w-sm">
+                <input type="text" maxLength="7" placeholder="DP-XXXX" value={vCode} onChange={(e) => setVCode(e.target.value.toUpperCase())} className="w-full bg-black border border-white/10 p-4 rounded-2xl text-center font-mono text-xl text-[#00f2ff] outline-none" />
+                <button onClick={handleVerify} disabled={vCode.length < 4 || isVerifying} className="px-8 rounded-2xl font-black bg-[#00f2ff] text-black text-[10px]">OK</button>
+              </div>
             </div>
           )}
 
-          {app.status === 'confirmé' && (
-            <div className={`mt-4 p-5 md:p-8 rounded-[30px] border-2 border-dashed ${dark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'} flex flex-col items-center gap-6 animate-in zoom-in-95`}>
-              <div className="text-center md:text-left w-full">
-                <h5 className="text-[9px] md:text-[10px] font-black tracking-[0.3em] text-[#00f2ff] mb-2 uppercase italic">Validation_Mission</h5>
-                <p className="text-[8px] md:text-[9px] opacity-40 normal-case italic leading-tight">Code client requis pour débloquer les fonds.</p>
+          {app.payment_status === 'released' && (
+              <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/20 text-center">
+                  <p className="text-[9px] font-black text-green-500 uppercase italic">Mission_Terminée_Libérée</p>
               </div>
-              <div className="flex flex-row gap-2 w-full max-w-full">
-                <input 
-                  type="text" maxLength="6" placeholder="------"
-                  value={vCode} onChange={(e) => setVCode(e.target.value.toUpperCase())}
-                  className="w-full flex-1 bg-black border border-white/10 p-4 rounded-2xl text-center font-mono text-xl md:text-2xl tracking-[0.2em] text-[#00f2ff] outline-none min-w-0"
-                />
-                <button 
-                  onClick={handleVerify}
-                  disabled={vCode.length !== 6 || isVerifying}
-                  className={`px-4 md:px-8 py-4 rounded-2xl font-black italic text-[10px] transition-all shrink-0 ${vCode.length === 6 ? 'bg-[#00f2ff] text-black shadow-lg shadow-[#00f2ff]/20' : 'bg-white/5 opacity-20'}`}
-                >{isVerifying ? '...' : 'OK'}</button>
-              </div>
-            </div>
-          )}
-          
-          {app.status === 'annulé' && app.cancellation_reason && (
-            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
-                <p className="text-[9px] font-black text-red-500 mb-1 uppercase">ALERTE_ANNULATION</p>
-                <p className="text-[11px] opacity-80 normal-case italic font-medium">{app.cancellation_reason}</p>
-            </div>
           )}
         </div>
     );
 }
 
+// ... (Ton composant ProCMS original reste identique, il n'a pas besoin de changement ici) ...
 function ProCMS({ supabase, profile, session, dark, onComplete }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);

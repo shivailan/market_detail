@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 
 // --- IMPORTS DES COMPOSANTS ET PAGES ---
+import AccountSettings from './components/AccountSettings'; // Vérifie bien le chemin
 import BookingModal from './components/BookingModal';
 import Footer from './components/Footer';
 import Navbar from './components/Navbar';
@@ -32,6 +33,7 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [filters, setFilters] = useState({ expertise: '', ville: '' });
 
   // Initialisation et Écouteurs
   useEffect(() => {
@@ -120,6 +122,15 @@ export default function App() {
     else { alert("MIS À JOUR !"); setShowAuth(false); setAuthMode('login'); setShowPassword(false); }
   };
 
+  const handleSearch = (newFilters) => {
+  // On fusionne les anciens filtres avec le nouveau (ex: expertise: "Lavage Manuel")
+  setFilters(prev => ({
+    ...prev,
+    ...newFilters
+  }));
+  setView('explorer');
+};
+
   return (
     <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden font-['Outfit'] italic uppercase text-left ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-[#fcfcfc] text-black'}`}>
       
@@ -130,6 +141,8 @@ export default function App() {
         dark={isDarkMode} 
         setDark={setIsDarkMode} 
         onAuthClick={() => { setAuthMode('login'); setShowAuth(true); }} 
+        selectedPro={selectedPro} // <--- AJOUTE CECI
+        onBackToExplorer={() => setSelectedPro(null)} // <--- AJOUTE CECI AUSSI
       />
 
       <main className="relative z-10 min-h-[80vh]">
@@ -137,6 +150,13 @@ export default function App() {
         {view === 'explorer' && <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />}
         {view === 'mes-reservations' && <MesReservations session={session} dark={isDarkMode} />}
         {view === 'dashboard' && <ProDashboard session={session} dark={isDarkMode} />}
+        {view === 'explorer' && (
+  <Explorer 
+    filters={filters} 
+    setFilters={setFilters} 
+    /* ... autres props */ 
+  />
+)}
         
         {/* VUE TARIFS (PRICING) */}
         {view === 'pricing' && (
@@ -180,6 +200,13 @@ export default function App() {
         {view === 'mentions' && <MentionsLegales dark={isDarkMode} />}
         {view === 'privacy' && <Privacy dark={isDarkMode} />}
         {view === 'terms' && <Terms dark={isDarkMode} />}
+        {view === 'profil' && (
+  <AccountSettings 
+    session={session} 
+    dark={isDarkMode} 
+    setView={setView} 
+  />
+)}
       </main>
 
       <Footer dark={isDarkMode} setView={setView} />

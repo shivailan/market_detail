@@ -13,15 +13,15 @@ export default function MentionsLegales({ dark }) {
         <h2 className={titleClass}>01_ÉDITION</h2>
         <p className={textClass}>
           Ce système est opéré par Shiva Ilanchejian.<br/>
-          SIRET: [NUMÉRO_SIRET]<br/>
-          Siège: [ADRESSE_COMPLÈTE]
+          SIRET: [93320328300017]<br/>
+          Siège: [10 IMPASSE DE L'ORMETEAU 77127 LIEUSAINT]
         </p>
       </div>
 
       <div className={sectionClass}>
         <h2 className={titleClass}>02_INFRASTRUCTURE</h2>
         <p className={textClass}>
-          Hébergement : Vercel Inc.<br/>
+          Hébergement : 02switch<br/>
           Database : Supabase Open Source BaaS.
         </p>
       </div>

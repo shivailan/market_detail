@@ -64,7 +64,7 @@ export default function MesReservations({ session, dark }) {
   return (
     <div className={`pt-32 md:pt-40 pb-20 px-4 md:px-12 max-w-[1200px] mx-auto font-black italic uppercase transition-all ${dark ? 'text-white' : 'text-black'}`}>
       
-      {/* HEADER SECTION - Responsive Text */}
+      {/* HEADER SECTION */}
       <div className="mb-10 md:mb-16 border-b border-current/10 pb-8 md:pb-10">
         <span className="text-[#00f2ff] text-[8px] md:text-[10px] tracking-[0.3em] md:tracking-[0.5em] block mb-2 truncate">ID: {session.user.email}</span>
         <h2 className="text-4xl md:text-8xl tracking-tighter leading-none break-words">MES_MISSIONS.</h2>
@@ -84,26 +84,31 @@ export default function MesReservations({ session, dark }) {
                   }`}>
                     <i className={`fas ${res.status === 'confirmé' ? 'fa-check' : res.status === 'refusé' ? 'fa-times' : 'fa-sync-alt'}`}></i>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xl md:text-2xl leading-none mb-1 tracking-tighter truncate">{res.profiles_pro?.nom_commercial || "UNITÉ_DETAIL"}</p>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xl md:text-2xl leading-none mb-1 tracking-tighter truncate italic uppercase font-black">{res.profiles_pro?.nom_commercial || "UNITÉ_DETAIL"}</p>
                     <p className="text-[9px] md:text-[10px] opacity-40 lowercase font-medium truncate">{res.profiles_pro?.adresse || "ZONE_ACTIVE"}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:flex md:flex-wrap gap-4 md:gap-8 items-center w-full lg:w-auto">
                   <div className="text-left">
-                    <p className="text-[7px] md:text-[8px] opacity-30 mb-1 tracking-widest">PROTOCOLE</p>
-                    <p className="text-[10px] md:text-[12px] truncate">{res.service_type || 'STANDARD'}</p>
+                    <p className="text-[7px] md:text-[8px] opacity-30 mb-1 tracking-widest uppercase">PROTOCOLE</p>
+                    <p className="text-[10px] md:text-[12px] truncate">{res.service_selected || 'STANDARD'}</p>
                   </div>
                   
                   <div className="text-left">
-                    <p className="text-[7px] md:text-[8px] opacity-30 mb-1 tracking-widest">SCHEDULE</p>
+                    <p className="text-[7px] md:text-[8px] opacity-30 mb-1 tracking-widest uppercase">MONTANT</p>
+                    <p className="text-[10px] md:text-[12px] text-[#bc13fe] font-black">{res.total_price}€</p>
+                  </div>
+
+                  <div className="text-left">
+                    <p className="text-[7px] md:text-[8px] opacity-30 mb-1 tracking-widest uppercase">SCHEDULE</p>
                     <p className="text-[10px] md:text-[12px] text-[#00f2ff] font-mono whitespace-nowrap">
-                      {res.appointment_date}
+                      {res.appointment_date} @ {res.appointment_time?.substring(0, 5)}
                     </p>
                   </div>
 
-                  {/* BOUTONS ACTIONS - Full width on mobile */}
+                  {/* BOUTONS ACTIONS */}
                   <div className="col-span-2 flex gap-3 w-full md:w-auto mt-2 md:mt-0">
                     <button 
                       onClick={() => setActiveChat({ id: res.profiles_pro.id, name: res.profiles_pro.nom_commercial })}
@@ -122,53 +127,58 @@ export default function MesReservations({ session, dark }) {
                 </div>
               </div>
 
-              {/* CODE DE SÉCURITÉ - Responsive Box */}
+              {/* CODE DE SÉCURITÉ - SYSTÈME DE SÉQUESTRE (ESCROW) */}
               {res.status === 'confirmé' && (
-                <div className="p-5 md:p-8 rounded-[25px] md:rounded-[35px] bg-[#bc13fe]/5 border border-[#bc13fe]/20">
+                <div className="p-5 md:p-8 rounded-[25px] md:rounded-[35px] bg-[#00f2ff]/5 border border-[#00f2ff]/20 animate-in fade-in zoom-in duration-500">
                   <div className="flex flex-col md:flex-row items-center gap-6 md:gap-8">
                     <div className="flex-1 text-center md:text-left">
                       <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
-                        <div className="w-5 h-5 rounded-full bg-[#bc13fe] flex items-center justify-center text-white text-[8px]">
-                          <i className="fas fa-lock"></i>
+                        <div className="w-5 h-5 rounded-full bg-[#00f2ff] flex items-center justify-center text-black text-[8px]">
+                          <i className="fas fa-shield-check"></i>
                         </div>
-                        <span className="text-[8px] md:text-[10px] font-black tracking-[0.2em] md:tracking-[0.3em] text-[#bc13fe]">MISSION_AUTH_CODE</span>
+                        <span className="text-[8px] md:text-[10px] font-black tracking-[0.2em] md:tracking-[0.3em] text-[#00f2ff]">PAIEMENT_SÉCURISÉ_SÉQUESTRE</span>
                       </div>
-                      <p className="text-[9px] opacity-60 normal-case italic leading-tight">À présenter <span className="text-[#bc13fe] font-black uppercase">uniquement à la fin</span> de la prestation.</p>
+                      <p className="text-[9px] opacity-60 normal-case italic leading-tight">
+                        Fonds bloqués. Présentez ce code au Pro <span className="text-[#00f2ff] font-black uppercase underline">seulement après</span> inspection du véhicule terminé.
+                      </p>
                     </div>
                     
-                    <div className="px-8 py-4 bg-white text-black rounded-2xl font-mono text-2xl md:text-3xl font-black tracking-[0.3em] border-2 border-[#bc13fe] shadow-lg">
-                      {res.validation_code || '------'}
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="px-8 py-4 bg-white text-black rounded-2xl font-mono text-2xl md:text-4xl font-black tracking-[0.3em] border-2 border-[#00f2ff] shadow-[0_0_20px_rgba(0,242,255,0.2)]">
+                        {res.payment_status === 'released' ? 'CHECK' : (res.validation_code || '------')}
+                        </div>
+                        <span className="text-[7px] opacity-40">STATUT_PAIEMENT : {res.payment_status?.toUpperCase()}</span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ANNULATION - Responsive Form */}
+              {/* ANNULATION */}
               {res.status !== 'annulé' && res.status !== 'refusé' && (
                 <div className="border-t border-current/5 pt-4 flex justify-center md:justify-end">
                   {cancellingId === res.id ? (
                     <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                      <select value={reason} onChange={(e) => setReason(e.target.value)} className={`text-[10px] p-3 rounded-xl border flex-1 ${dark ? 'bg-black border-white/20' : 'bg-white border-black/20'}`}>
+                      <select value={reason} onChange={(e) => setReason(e.target.value)} className={`text-[10px] p-3 rounded-xl border flex-1 font-black ${dark ? 'bg-black border-white/20' : 'bg-white border-black/20'}`}>
                         <option value="">MOTIF_ANNULATION</option>
                         {cancellationReasons.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
-                      <button onClick={() => handleCancel(res.id)} className="bg-red-600 text-white px-5 py-3 rounded-xl text-[9px]">VALIDER</button>
-                      <button onClick={() => setCancellingId(null)} className="opacity-40 text-[9px] py-3">RETOUR</button>
+                      <button onClick={() => handleCancel(res.id)} className="bg-red-600 text-white px-5 py-3 rounded-xl text-[9px] font-black">VALIDER</button>
+                      <button onClick={() => setCancellingId(null)} className="opacity-40 text-[9px] py-3 font-black">RETOUR</button>
                     </div>
                   ) : (
-                    <button onClick={() => setCancellingId(res.id)} className="text-[8px] md:text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all tracking-[0.2em]">
+                    <button onClick={() => setCancellingId(res.id)} className="text-[8px] md:text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all tracking-[0.2em] font-black">
                       <i className="fas fa-ban mr-2"></i>ANNULER_LA_MISSION
                     </button>
                   )}
                 </div>
               )}
 
-              {/* AVIS - Responsive form */}
-              {res.status === 'terminé' && (
-                <div className="p-6 md:p-8 rounded-[30px] border border-[#00f2ff]/20 bg-[#00f2ff]/5">
+              {/* AVIS */}
+              {res.payment_status === 'released' && (
+                <div className="p-6 md:p-8 rounded-[30px] border border-[#bc13fe]/20 bg-[#bc13fe]/5">
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                      <p className="text-[10px] font-black tracking-[0.3em] text-[#00f2ff]">MISSION_COMPLETE_FEEDBACK</p>
+                      <p className="text-[10px] font-black tracking-[0.3em] text-[#bc13fe]">MISSION_TERMINÉE : NOTER L'UNITÉ</p>
                       <div className="flex gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button key={star} onClick={() => setReviewData({ ...reviewData, rating: star, targetApt: res })}>
@@ -178,12 +188,12 @@ export default function MesReservations({ session, dark }) {
                       </div>
                     </div>
                     <textarea 
-                      placeholder="Commentaire..." 
-                      className={`w-full p-4 rounded-2xl border text-[10px] normal-case italic min-h-[80px] ${dark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'}`}
+                      placeholder="Commentaire sur la qualité du detailing..." 
+                      className={`w-full p-4 rounded-2xl border text-[10px] normal-case italic min-h-[80px] font-black ${dark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'}`}
                       value={reviewData.targetApt?.id === res.id ? reviewData.comment : ''}
                       onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value, targetApt: res })}
                     />
-                    <button onClick={submitReview} className="w-full py-4 bg-[#00f2ff] text-black font-black text-[10px] tracking-widest rounded-full">PUBLIER_AVIS</button>
+                    <button onClick={submitReview} className="w-full py-4 bg-[#bc13fe] text-white font-black text-[10px] tracking-widest rounded-full shadow-lg">PUBLIER_AVIS_TECHNIQUE</button>
                   </div>
                 </div>
               )}
