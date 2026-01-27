@@ -2,6 +2,40 @@ import { useCallback, useEffect, useState } from 'react';
 import ChatBox from '../components/ChatBox';
 import { supabase } from '../lib/supabase';
 
+// --- LOGIQUE DE CALCUL DES REMBOURSEMENTS ---
+const calculateCancellationTerms = (appointmentDate, appointmentTime, price) => {
+  const now = new Date();
+  // On crée une date robuste pour la comparaison
+  const appointment = new Date(`${appointmentDate}T${appointmentTime}`);
+  const diffInHours = (appointment - now) / (1000 * 60 * 60);
+
+  if (diffInHours >= 48) {
+    return { 
+      refund: 100, 
+      payoutPro: 0, 
+      color: 'text-green-500', 
+      label: 'Anticipée', 
+      desc: 'Remboursement intégral (100%).' 
+    };
+  } else if (diffInHours >= 24) {
+    return { 
+      refund: 70, 
+      payoutPro: 30, 
+      color: 'text-orange-500', 
+      label: 'Tardive', 
+      desc: 'Remboursement partiel (70%). Frais de dédommagement pro (30%).' 
+    };
+  } else {
+    return { 
+      refund: 0, 
+      payoutPro: 100, 
+      color: 'text-red-500', 
+      label: 'Dernière minute', 
+      desc: 'Aucun remboursement (0%). Le professionnel est payé intégralement.' 
+    };
+  }
+};
+
 export default function MesReservations({ session, dark }) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,14 +59,32 @@ export default function MesReservations({ session, dark }) {
     setLoading(false);
   }, [session]);
 
-  const handleCancel = async (id) => {
+  const handleCancel = async (booking) => {
     if (!reason) return alert("Veuillez sélectionner une raison.");
-    const { data, error } = await supabase.from('appointments').update({ 
-      status: 'annulé', cancellation_reason: `Annulé par le client : ${reason}` 
-    }).match({ id: id, client_name: session.user.email }).select();
-    if (!error && data?.length > 0) {
+    
+    // Calcul des montants selon les règles
+    const terms = calculateCancellationTerms(booking.appointment_date, booking.appointment_time, booking.total_price);
+    const refundAmount = (booking.total_price * terms.refund) / 100;
+    const payoutAmount = (booking.total_price * terms.payoutPro) / 100;
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ 
+        status: 'annulé', 
+        cancellation_reason: `Client [${terms.label}] : ${reason}`,
+        refund_amount: refundAmount,
+        payout_amount: payoutAmount,
+        cancelled_at: new Date().toISOString()
+      })
+      .match({ id: booking.id, client_name: session.user.email });
+
+    if (!error) {
+      alert(`ANNULATION_CONFIRMÉE. REMBOURSEMENT : ${refundAmount}€`);
       setCancellingId(null);
+      setReason("");
       fetchBookingsByEmail();
+    } else {
+      alert("ERREUR_SYSTÈME : " + error.message);
     }
   };
 
@@ -67,7 +119,7 @@ export default function MesReservations({ session, dark }) {
       {/* HEADER SECTION */}
       <div className="mb-10 md:mb-16 border-b border-current/10 pb-8 md:pb-10">
         <span className="text-[#00f2ff] text-[8px] md:text-[10px] tracking-[0.3em] md:tracking-[0.5em] block mb-2 truncate">ID: {session.user.email}</span>
-        <h2 className="text-4xl md:text-8xl tracking-tighter leading-none break-words">MES_MISSIONS.</h2>
+        <h2 className="text-4xl md:text-8xl tracking-tighter leading-none break-words italic font-black">MES_MISSIONS.</h2>
       </div>
 
       <div className="space-y-6 md:space-y-8">
@@ -108,7 +160,6 @@ export default function MesReservations({ session, dark }) {
                     </p>
                   </div>
 
-                  {/* BOUTONS ACTIONS */}
                   <div className="col-span-2 flex gap-3 w-full md:w-auto mt-2 md:mt-0">
                     <button 
                       onClick={() => setActiveChat({ id: res.profiles_pro.id, name: res.profiles_pro.nom_commercial })}
@@ -127,7 +178,7 @@ export default function MesReservations({ session, dark }) {
                 </div>
               </div>
 
-              {/* CODE DE SÉCURITÉ - SYSTÈME DE SÉQUESTRE (ESCROW) */}
+              {/* CODE DE SÉCURITÉ */}
               {res.status === 'confirmé' && (
                 <div className="p-5 md:p-8 rounded-[25px] md:rounded-[35px] bg-[#00f2ff]/5 border border-[#00f2ff]/20 animate-in fade-in zoom-in duration-500">
                   <div className="flex flex-col md:flex-row items-center gap-6 md:gap-8">
@@ -147,33 +198,71 @@ export default function MesReservations({ session, dark }) {
                         <div className="px-8 py-4 bg-white text-black rounded-2xl font-mono text-2xl md:text-4xl font-black tracking-[0.3em] border-2 border-[#00f2ff] shadow-[0_0_20px_rgba(0,242,255,0.2)]">
                         {res.payment_status === 'released' ? 'CHECK' : (res.validation_code || '------')}
                         </div>
-                        <span className="text-[7px] opacity-40">STATUT_PAIEMENT : {res.payment_status?.toUpperCase()}</span>
+                        <span className="text-[7px] opacity-40 uppercase tracking-widest">STATUT_PAIEMENT : {res.payment_status?.toUpperCase()}</span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ANNULATION */}
+              {/* LOGIQUE D'ANNULATION DYNAMIQUE */}
               {res.status !== 'annulé' && res.status !== 'refusé' && (
-                <div className="border-t border-current/5 pt-4 flex justify-center md:justify-end">
+                <div className="border-t border-current/5 pt-6 mt-2">
                   {cancellingId === res.id ? (
-                    <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                      <select value={reason} onChange={(e) => setReason(e.target.value)} className={`text-[10px] p-3 rounded-xl border flex-1 font-black ${dark ? 'bg-black border-white/20' : 'bg-white border-black/20'}`}>
-                        <option value="">MOTIF_ANNULATION</option>
-                        {cancellationReasons.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                      <button onClick={() => handleCancel(res.id)} className="bg-red-600 text-white px-5 py-3 rounded-xl text-[9px] font-black">VALIDER</button>
-                      <button onClick={() => setCancellingId(null)} className="opacity-40 text-[9px] py-3 font-black">RETOUR</button>
+                    <div className="flex flex-col gap-4 animate-in slide-in-from-bottom-2">
+                      {/* BANDEAU PRÉVENTIF */}
+                      <div className={`p-4 rounded-2xl bg-white/5 border border-white/10 text-left`}>
+                        {(() => {
+                          const terms = calculateCancellationTerms(res.appointment_date, res.appointment_time, res.total_price);
+                          return (
+                            <>
+                              <p className={`text-[10px] font-black italic mb-1 ${terms.color}`}>
+                                PROTOCOLE ANNULATION : {terms.label.toUpperCase()}
+                              </p>
+                              <p className="text-[9px] opacity-60 leading-tight">
+                                {terms.desc} Retour financier estimé : <span className="text-white font-black">{(res.total_price * terms.refund / 100).toFixed(2)}€</span>
+                              </p>
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-3 w-full">
+                        <select 
+                          value={reason} 
+                          onChange={(e) => setReason(e.target.value)} 
+                          className={`text-[10px] p-4 rounded-xl border flex-1 font-black outline-none ${dark ? 'bg-black border-white/20 text-white' : 'bg-white border-black/20 text-black'}`}
+                        >
+                          <option value="">MOTIF_ANNULATION</option>
+                          {cancellationReasons.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <button 
+                          onClick={() => handleCancel(res)} 
+                          className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 rounded-xl text-[9px] font-black transition-all"
+                        >
+                          VALIDER_ANNULATION
+                        </button>
+                        <button 
+                          onClick={() => setCancellingId(null)} 
+                          className="opacity-40 hover:opacity-100 text-[9px] py-4 font-black uppercase tracking-widest"
+                        >
+                          Garder_RDV
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <button onClick={() => setCancellingId(res.id)} className="text-[8px] md:text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all tracking-[0.2em] font-black">
-                      <i className="fas fa-ban mr-2"></i>ANNULER_LA_MISSION
-                    </button>
+                    <div className="flex justify-center md:justify-end">
+                      <button 
+                        onClick={() => { setCancellingId(res.id); setReason(""); }} 
+                        className="text-[8px] md:text-[9px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all tracking-[0.2em] font-black"
+                      >
+                        <i className="fas fa-ban mr-2"></i>ANNULER_LA_MISSION
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* AVIS */}
+              {/* AVIS TECHNIQUE */}
               {res.payment_status === 'released' && (
                 <div className="p-6 md:p-8 rounded-[30px] border border-[#bc13fe]/20 bg-[#bc13fe]/5">
                   <div className="flex flex-col gap-5">

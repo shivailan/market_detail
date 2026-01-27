@@ -23,13 +23,14 @@ export default function ProDashboard({ session, dark }) {
   const [activeTab, setActiveTab] = useState('overview'); 
   const [statusFilter, setStatusFilter] = useState('tous');
   const [viewMode, setViewMode] = useState('workWeek'); 
-  const [currentDate, setCurrentDate] = useState(new Date());          // Dans ton ProDashboard.jsx
-const profileUrl = `${window.location.origin}/pro/${profile?.slug}`;
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-const copyToClipboard = () => {
-  navigator.clipboard.writeText(profileUrl);
-  alert("Lien copié ! Collez-le sur votre fiche Google Maps.");
-};
+  const profileUrl = `${window.location.origin}/pro/${profile?.slug}`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(profileUrl);
+    alert("Lien copié ! Collez-le sur votre fiche Google Maps.");
+  };
 
   // --- ÉTATS MESSAGERIE ---
   const [conversations, setConversations] = useState([]);
@@ -59,46 +60,44 @@ const copyToClipboard = () => {
 
   const activityData = getActivityData();
 
-  // --- RÉCUPÉRATION DES CONVERSATIONS (RECHERCHE DANS USERS_REGISTRY) ---
-const fetchConversations = useCallback(async () => {
-  if (!session?.user?.id) return;
+  const fetchConversations = useCallback(async () => {
+    if (!session?.user?.id) return;
 
-  const { data, error } = await supabase
-    .from('messages')
-    .select('sender_id, receiver_id, sender_name, receiver_name, content, created_at')
-    .or(`sender_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
-    .order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('messages')
+      .select('sender_id, receiver_id, sender_name, receiver_name, content, created_at')
+      .or(`sender_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
+      .order('created_at', { ascending: false });
 
-  if (!error && data) {
-    const contactMap = new Map();
-    const uniqueContacts = [];
+    if (!error && data) {
+      const contactMap = new Map();
+      const uniqueContacts = [];
 
-    data.forEach(msg => {
-      const isIwasSender = msg.sender_id === session.user.id;
-      const contactId = isIwasSender ? msg.receiver_id : msg.sender_id;
-      
-      // On prend directement le nom stocké dans le message !
-      const contactName = isIwasSender ? msg.receiver_name : msg.sender_name;
-      
-      if (contactId && !contactMap.has(contactId)) {
-        contactMap.set(contactId, true);
-        uniqueContacts.push({
-          id: contactId,
-          name: (contactName || "CLIENT_UNIT").toUpperCase(),
-          lastMsg: msg.content,
-          time: msg.created_at
-        });
-      }
-    });
-    setConversations(uniqueContacts);
-  }
-}, [session?.user?.id]);
+      data.forEach(msg => {
+        const isIwasSender = msg.sender_id === session.user.id;
+        const contactId = isIwasSender ? msg.receiver_id : msg.sender_id;
+        const contactName = isIwasSender ? msg.receiver_name : msg.sender_name;
+        
+        if (contactId && !contactMap.has(contactId)) {
+          contactMap.set(contactId, true);
+          uniqueContacts.push({
+            id: contactId,
+            name: (contactName || "CLIENT_UNIT").toUpperCase(),
+            lastMsg: msg.content,
+            time: msg.created_at
+          });
+        }
+      });
+      setConversations(uniqueContacts);
+    }
+  }, [session?.user?.id]);
+
   // --- STATISTIQUES ---
   const stats = {
     totalRevenue: appointments.filter(a => a.status === 'terminé').reduce((sum, a) => sum + Number(a.total_price || 0), 0),
     pendingMissions: appointments.filter(a => a.status === 'en attente').length,
     activeMissions: appointments.filter(a => a.status === 'confirmé').length,
-    escrowAmount: appointments.filter(a => a.payment_status === 'escrow' && a.status !== 'annulé').reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+    escrowAmount: appointments.filter(a => a.payment_status === 'escrow' && a.status !== 'annulé' && a.status !== 'refusé').reduce((sum, a) => sum + Number(a.total_price || 0), 0),
   };
 
   const fetchData = useCallback(async () => {
@@ -107,7 +106,7 @@ const fetchConversations = useCallback(async () => {
     if (prof) setProfile(prof);
     else setIsConfiguring(true);
 
-    const { data: apps } = await supabase.from('appointments').select('*').eq('pro_id', session.user.id);
+    const { data: apps } = await supabase.from('appointments').select('*').eq('pro_id', session.user.id).order('appointment_date', { ascending: false });
     setAppointments(apps || []);
     
     await fetchConversations();
@@ -116,9 +115,32 @@ const fetchConversations = useCallback(async () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const updateStatus = async (appId, newStatus) => {
-    const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', appId);
-    if (!error) fetchData();
+  const updateStatus = async (appId, newStatus, reason = "") => {
+    setLoading(true);
+    
+    if (newStatus === 'refusé' || newStatus === 'annulé') {
+      const confirm = window.confirm("ATTENTION : L'annulation d'une mission impacte votre score de fiabilité. Confirmer ?");
+      if (!confirm) {
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.from('appointments').update({ 
+        status: 'refusé',
+        cancellation_reason: `ANNULÉ_PAR_PRO : ${reason || 'Imprévu technique'}`,
+        refund_amount: appointments.find(a => a.id === appId).total_price,
+        payout_amount: 0,
+        cancelled_at: new Date().toISOString()
+      }).eq('id', appId);
+
+      if (error) alert(error.message);
+    } else {
+      const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', appId);
+      if (error) alert(error.message);
+    }
+    
+    fetchData();
+    setLoading(false);
   };
 
   const glass = dark ? 'bg-white/[0.03] border-white/10' : 'bg-black/[0.03] border-black/10';
@@ -140,7 +162,7 @@ const fetchConversations = useCallback(async () => {
                 <img src={profile?.cover_url || "https://via.placeholder.com/150"} className="w-full h-full object-cover" />
               </div>
               <div>
-                <h1 className="text-3xl md:text-5xl tracking-tighter leading-none">{profile?.nom_commercial || "MON_STUDIO"}</h1>
+                <h1 className="text-3xl md:text-5xl tracking-tighter leading-none italic font-black">{profile?.nom_commercial || "MON_STUDIO"}</h1>
                 <p className="text-[10px] text-[#bc13fe] tracking-[0.3em] mt-2 italic font-black">Status: OPÉRATIONNEL</p>
               </div>
             </div>
@@ -155,40 +177,35 @@ const fetchConversations = useCallback(async () => {
                   {tab.toUpperCase()}
                 </button>
               ))}
-              <button onClick={() => setIsConfiguring(true)} className="px-6 py-3 text-[9px] opacity-40 hover:opacity-100"><i className="fas fa-cog"></i></button>
+              <button onClick={() => setIsConfiguring(true)} className="px-6 py-3 text-[9px] opacity-40 hover:opacity-100 transition-all"><i className="fas fa-cog"></i></button>
             </div>
           </div>
 
-          {/* VIEW: OVERVIEW */}
+          {/* PUBLIC URL BAR */}
+          <div className={`p-6 rounded-[30px] border ${glass} border-[#bc13fe]/30 bg-[#bc13fe]/5 mb-8`}>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="text-left">
+                <p className="text-[10px] font-black tracking-widest text-[#bc13fe] mb-1">VOTRE_VITRINE_PUBLIQUE</p>
+                <p className="text-xs font-mono opacity-60 truncate max-w-[300px] md:max-w-none">{profileUrl}</p>
+              </div>
+              <div className="flex gap-2 w-full md:w-auto">
+                <button 
+                  onClick={copyToClipboard}
+                  className="flex-1 md:flex-none px-6 py-3 bg-[#bc13fe] text-white rounded-xl text-[10px] font-black italic transition-all active:scale-95"
+                >
+                  COPIER_LE_LIEN
+                </button>
+                <a 
+                  href={profileUrl} 
+                  target="_blank" 
+                  className="flex-1 md:flex-none px-6 py-3 border border-[#bc13fe] text-[#bc13fe] rounded-xl text-[10px] font-black italic text-center hover:bg-[#bc13fe] hover:text-white transition-all"
+                >
+                  VOIR_MA_PAGE
+                </a>
+              </div>
+            </div>
+          </div>
 
-
-
-<div className={`p-6 rounded-[30px] border ${glass} border-[#bc13fe]/30 bg-[#bc13fe]/5 mb-8`}>
-  <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-    <div className="text-left">
-      <p className="text-[10px] font-black tracking-widest text-[#bc13fe] mb-1">VOTRE_VITRINE_PUBLIQUE</p>
-      <p className="text-xs font-mono opacity-60 truncate max-w-[300px] md:max-w-none">{profileUrl}</p>
-    </div>
-    <div className="flex gap-2 w-full md:w-auto">
-      <button 
-        onClick={copyToClipboard}
-        className="flex-1 md:flex-none px-6 py-3 bg-[#bc13fe] text-white rounded-xl text-[10px] font-black italic"
-      >
-        COPIER_LE_LIEN
-      </button>
-      <a 
-        href={profileUrl} 
-        target="_blank" 
-        className="flex-1 md:flex-none px-6 py-3 border border-[#bc13fe] text-[#bc13fe] rounded-xl text-[10px] font-black italic text-center"
-      >
-        VOIR_MA_PAGE
-      </a>
-    </div>
-  </div>
-  <p className="text-[8px] mt-4 opacity-40 italic">
-    INFO : Utilisez ce lien dans la section "Prendre rendez-vous" de Google My Business.
-  </p>
-</div>
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-6">
               <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
@@ -218,13 +235,12 @@ const fetchConversations = useCallback(async () => {
                 </div>
               </div>
 
-
               {/* SIDEBAR OVERVIEW */}
               <div className="lg:col-span-4 space-y-6">
                 <div className={`p-8 rounded-[40px] border ${glass} border-[#00f2ff]/20 bg-[#00f2ff]/5`}>
                   <h3 className="text-sm mb-6 flex items-center gap-3 font-black italic"><i className="fas fa-bolt text-[#00f2ff]"></i> ACTIONS_REQUISES</h3>
                   {appointments.filter(a => a.status === 'en attente').map(a => (
-                    <div key={a.id} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl mb-2 border border-white/5">
+                    <div key={a.id} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl mb-2 border border-white/5 transition-all hover:bg-black/40">
                       <p className="text-[9px] font-black italic">{a.client_name?.split('@')[0].toUpperCase() || "UNIT_ID"}</p>
                       <button onClick={() => setActiveTab('missions')} className="text-[8px] text-[#00f2ff] underline font-black">VOIR</button>
                     </div>
@@ -245,7 +261,7 @@ const fetchConversations = useCallback(async () => {
                         </div>
                         <div className="flex-1 min-w-0">
                            <div className="flex justify-between items-center">
-                              <p className="text-[10px] font-black truncate">{conv.name}</p>
+                              <p className="text-[10px] font-black truncate italic">{conv.name}</p>
                               <span className="text-[6px] opacity-30 font-black italic">{format(new Date(conv.time), 'HH:mm')}</span>
                            </div>
                            <p className="text-[8px] opacity-50 truncate normal-case italic mt-1">{conv.lastMsg}</p>
@@ -260,16 +276,15 @@ const fetchConversations = useCallback(async () => {
             </div>
           )}
 
-          {/* VIEW: AGENDA */}
           {activeTab === 'agenda' && (
-            <div className="animate-in fade-in zoom-in-95">
+            <div className="animate-in fade-in zoom-in-95 duration-500">
                <div className={`p-6 rounded-[50px] border ${glass} backdrop-blur-3xl overflow-hidden`}>
                   <div className="flex justify-between items-center mb-8">
                     <div className="flex gap-4">
-                       <button onClick={() => setCurrentDate(subWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all">←</button>
-                       <button onClick={() => setCurrentDate(addWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all">→</button>
+                       <button onClick={() => setCurrentDate(subWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all">←</button>
+                       <button onClick={() => setCurrentDate(addWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all">→</button>
                     </div>
-                    <p className="text-xl font-black italic">{format(currentDate, 'MMMM yyyy', { locale: fr }).toUpperCase()}</p>
+                    <p className="text-xl font-black italic uppercase">{format(currentDate, 'MMMM yyyy', { locale: fr })}</p>
                   </div>
                   <div className="overflow-x-auto">
                     <AgendaTable displayedDays={getDisplayedDays(currentDate, viewMode)} hours={hours} appointments={appointments} dark={dark} glass={glass} setActiveChat={setActiveChat} />
@@ -278,13 +293,12 @@ const fetchConversations = useCallback(async () => {
             </div>
           )}
 
-          {/* VIEW: MISSIONS */}
           {activeTab === 'missions' && (
-            <div className="space-y-6 animate-in slide-in-from-right-10">
+            <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4">
-                  {['tous', 'en attente', 'confirmé', 'terminé', 'annulé'].map(f => (
-                    <button key={f} onClick={() => setStatusFilter(f)} className={`px-8 py-3 rounded-full text-[9px] border transition-all font-black italic ${statusFilter === f ? 'bg-white text-black' : 'border-white/10 opacity-40'}`}>
-                      {f.toUpperCase()}
+                  {['tous', 'en attente', 'confirmé', 'terminé', 'refusé'].map(f => (
+                    <button key={f} onClick={() => setStatusFilter(f)} className={`px-8 py-3 rounded-full text-[9px] border transition-all font-black italic uppercase ${statusFilter === f ? 'bg-white text-black' : 'border-white/10 opacity-40 hover:opacity-100'}`}>
+                      {f}
                     </button>
                   ))}
                </div>
@@ -298,7 +312,6 @@ const fetchConversations = useCallback(async () => {
         </div>
       )}
 
-      {/* MODALE DE CHAT */}
       {activeChat && (
         <div className="fixed inset-0 z-[2500] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
            <div className="relative w-full max-w-lg h-[600px] shadow-2xl animate-in zoom-in-95 duration-300">
@@ -316,11 +329,11 @@ function StatCard({ title, value, icon, color, glass }) {
   return (
     <div className={`p-8 rounded-[40px] border ${glass} group hover:border-white/20 transition-all text-left`}>
       <div className="flex justify-between items-start mb-4">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-black" style={{ backgroundColor: color }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-black transition-transform group-hover:scale-110" style={{ backgroundColor: color }}>
           <i className={`fas ${icon}`}></i>
         </div>
       </div>
-      <p className="text-[9px] opacity-40 mb-1 tracking-widest font-black italic">{title.toUpperCase()}</p>
+      <p className="text-[9px] opacity-40 mb-1 tracking-widest font-black italic uppercase">{title}</p>
       <p className="text-3xl font-black italic">{value}</p>
     </div>
   );
@@ -347,7 +360,7 @@ function AgendaTable({ displayedDays, hours, appointments, dark, glass, setActiv
               const rdv = appointments.find(a => 
                 a.appointment_date === format(day, 'yyyy-MM-dd') && 
                 a.appointment_time.startsWith(hour.split(':')[0]) && 
-                a.status === 'confirmé'
+                (a.status === 'confirmé' || a.status === 'terminé')
               );
               return (
                 <td key={day.toString()} className="border-b border-white/5 border-l border-white/5 relative hover:bg-white/5 transition-colors">
@@ -375,42 +388,90 @@ function getDisplayedDays(currentDate, viewMode) {
 function MissionCard({ app, dark, glass, updateStatus, setActiveChat, fetchData }) {
     const [vCode, setVCode] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
+    const [showCancelOptions, setShowCancelOptions] = useState(false);
+
     const handleVerify = async () => {
         if(vCode.toUpperCase() === (app.validation_code || '').toUpperCase()) {
             setIsVerifying(true);
-            const { error } = await supabase.from('appointments').update({ status: 'terminé', payment_status: 'released' }).eq('id', app.id);
-            if (!error) { alert("PAIEMENT LIBÉRÉ !"); fetchData(); }
+            const { error } = await supabase.from('appointments').update({ 
+              status: 'terminé', 
+              payment_status: 'released',
+              payout_amount: app.total_price 
+            }).eq('id', app.id);
+            if (!error) { alert("PAIEMENT_LIBÉRÉ_COMMAND_CONFIRMED !"); fetchData(); }
             setIsVerifying(false);
-        } else alert("CODE INVALIDE");
+        } else alert("CODE_INVALIDE_ACCÈS_REFUSÉ");
     };
+
+    const statusColors = {
+      'en attente': 'border-[#bc13fe] text-[#bc13fe]',
+      'confirmé': 'border-[#00f2ff] text-[#00f2ff]',
+      'terminé': 'border-green-500 text-green-500',
+      'refusé': 'border-red-500 text-red-500'
+    };
+
     return (
-        <div className={`p-8 rounded-[40px] border ${glass} flex flex-col md:flex-row justify-between items-center gap-6 transition-all hover:border-[#00f2ff]/30 text-left`}>
-          <div className="flex items-center gap-6 w-full md:w-auto">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-black font-black bg-[#bc13fe]">
+        <div className={`p-8 rounded-[40px] border ${glass} flex flex-col lg:flex-row justify-between items-center gap-6 transition-all hover:border-[#bc13fe]/30 text-left relative overflow-hidden`}>
+          
+          <div className="flex items-center gap-6 w-full lg:w-auto">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-black font-black bg-[#bc13fe] shrink-0">
               {app.client_name ? app.client_name[0].toUpperCase() : 'U'}
             </div>
-            <div>
-                <p className="text-xl font-black italic uppercase">{app.client_name?.split('@')[0] || "UNIT_ID"}</p>
-                <p className="text-[9px] text-[#00f2ff] font-black uppercase mt-1 italic">{app.service_selected} — {app.total_price}€</p>
+            <div className="min-w-0">
+                <div className="flex items-center gap-3 mb-1">
+                  <p className="text-xl font-black italic uppercase truncate">{app.client_name?.split('@')[0] || "UNIT_ID"}</p>
+                  <span className={`px-3 py-1 rounded-full text-[7px] border font-black uppercase italic ${statusColors[app.status]}`}>
+                    {app.status}
+                  </span>
+                </div>
+                <p className="text-[9px] text-[#00f2ff] font-black uppercase italic">{app.service_selected} — {app.total_price}€</p>
             </div>
           </div>
-          <div className="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
-            <div className="text-right hidden md:block">
-                <p className="text-lg font-black italic uppercase">{app.appointment_date}</p>
-                <p className="text-[10px] opacity-40 uppercase font-black italic">@{app.appointment_time}</p>
+
+          <div className="flex flex-wrap items-center justify-center lg:justify-end gap-4 w-full lg:w-auto">
+            <div className="text-center lg:text-right px-4 border-l border-white/5">
+                <p className="text-[12px] font-black italic uppercase">{app.appointment_date}</p>
+                <p className="text-[9px] opacity-40 uppercase font-black italic">@{app.appointment_time}</p>
             </div>
+
             {app.status === 'en attente' && (
-              <button onClick={() => updateStatus(app.id, 'confirmé')} className="px-8 py-4 bg-[#00f2ff] text-black rounded-2xl text-[10px] font-black italic uppercase">ACCEPTER</button>
+              <div className="flex gap-2">
+                <button onClick={() => updateStatus(app.id, 'confirmé')} className="px-6 py-4 bg-[#00f2ff] text-black rounded-2xl text-[10px] font-black italic uppercase transition-all active:scale-95">ACCEPTER</button>
+                <button onClick={() => updateStatus(app.id, 'refusé')} className="px-6 py-4 bg-red-500/20 text-red-500 rounded-2xl text-[10px] font-black italic uppercase transition-all active:scale-95">REFUSER</button>
+              </div>
             )}
-            {app.status === 'confirmé' && app.payment_status === 'escrow' && (
-                <div className="flex gap-2">
-                    <input type="text" placeholder="CODE" value={vCode} onChange={e => setVCode(e.target.value)} className="bg-black border border-white/10 px-4 py-4 rounded-2xl text-center font-mono text-xs outline-none w-32" />
-                    <button onClick={handleVerify} disabled={isVerifying} className="px-6 py-4 bg-green-500 text-black rounded-2xl text-[10px] font-black italic uppercase">VALIDER</button>
+
+            {app.status === 'confirmé' && (
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <div className="flex gap-2 bg-black/40 p-2 rounded-2xl border border-white/5">
+                        <input 
+                          type="text" 
+                          placeholder="CODE_CLIENT" 
+                          value={vCode} 
+                          onChange={e => setVCode(e.target.value)} 
+                          className="bg-transparent px-4 py-2 rounded-xl text-center font-mono text-xs outline-none w-24 text-[#00f2ff]" 
+                        />
+                        <button onClick={handleVerify} disabled={isVerifying} className="px-4 py-2 bg-[#00f2ff] text-black rounded-xl text-[9px] font-black italic uppercase transition-all active:scale-95">LIBÉRER</button>
+                    </div>
+
+                    {!showCancelOptions ? (
+                      <button onClick={() => setShowCancelOptions(true)} className="text-[8px] opacity-20 hover:opacity-100 text-red-500 font-black italic uppercase underline decoration-red-500 underline-offset-4 transition-all">
+                        Annulation_Urgence
+                      </button>
+                    ) : (
+                      <div className="flex gap-2 animate-in slide-in-from-right-2">
+                        <button onClick={() => updateStatus(app.id, 'refusé', 'Imprévu Pro')} className="px-3 py-2 bg-red-500 text-white rounded-lg text-[8px] font-black uppercase transition-all active:scale-95">CONFIRMER_ANNULATION</button>
+                        <button onClick={() => setShowCancelOptions(false)} className="px-3 py-2 bg-white/10 rounded-lg text-[8px] font-black uppercase transition-all active:scale-95">RETOUR</button>
+                      </div>
+                    )}
                 </div>
             )}
-            <button onClick={() => setActiveChat({id: app.client_id, name: app.client_name})} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all">
-                <i className="fas fa-comments"></i>
-            </button>
+
+            <div className="flex gap-2">
+              <button onClick={() => setActiveChat({id: app.client_id, name: app.client_name})} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all">
+                  <i className="fas fa-comments"></i>
+              </button>
+            </div>
           </div>
         </div>
     );
