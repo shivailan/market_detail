@@ -6,6 +6,21 @@
   padding: 0;
   box-sizing: border-box;
 }
+@keyframes scroll-dot {
+  0% { transform: translateY(0); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(15px); opacity: 0; }
+}
+
+.animate-scroll-dot {
+  animation: scroll-dot 2s infinite ease-in-out;
+}
+
+/* Optionnel : un petit effet de pulse sur le texte */
+@keyframes text-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
 
 body {
   margin: 0;

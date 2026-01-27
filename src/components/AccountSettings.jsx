@@ -7,15 +7,17 @@ export default function AccountSettings({ session, dark, setView }) {
   const [newPassword, setNewPassword] = useState('');
   
   const userRole = session?.user?.user_metadata?.role || 'client';
+  
+  // Extraction des métadonnées envoyées lors de l'inscription
+  const { first_name, last_name, siret } = session?.user?.user_metadata || {};
 
-  // 1. CHANGER LE MOT DE PASSE (AVEC VÉRIFICATION DE L'ANCIEN)
+  // 1. CHANGER LE MOT DE PASSE
   const handleUpdatePassword = async () => {
     if (!oldPassword || !newPassword) return alert("Veuillez remplir tous les champs.");
     if (newPassword.length < 6) return alert("Le nouveau mot de passe doit faire 6 caractères minimum.");
     
     setLoading(true);
 
-    // Étape A : On vérifie si l'ancien mot de passe est correct en essayant de re-connecter l'utilisateur
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: session.user.email,
       password: oldPassword,
@@ -27,7 +29,6 @@ export default function AccountSettings({ session, dark, setView }) {
       return;
     }
 
-    // Étape B : Si c'est bon, on met à jour avec le nouveau
     const { error: updateError } = await supabase.auth.updateUser({ 
       password: newPassword 
     });
@@ -43,37 +44,33 @@ export default function AccountSettings({ session, dark, setView }) {
     setLoading(false);
   };
 
-  // 2. SUPPRIMER LE COMPTE (Action irréversible)
-const handleDeleteAccount = async () => {
-  const confirm = window.confirm("SUPPRESSION TOTALE : Ton email et tes accès vont être bannis du système. Confirmer ?");
-  if (!confirm) return;
+  // 2. SUPPRIMER LE COMPTE
+  const handleDeleteAccount = async () => {
+    const confirm = window.confirm("SUPPRESSION TOTALE : Ton email et tes accès vont être bannis du système. Confirmer ?");
+    if (!confirm) return;
 
-  setLoading(true);
-  try {
-    // On supprime la ligne dans profiles_pro (ce qui déclenche le SQL)
-    const { error } = await supabase
-      .from('profiles_pro')
-      .delete()
-      .eq('id', session.user.id);
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('profiles_pro')
+        .delete()
+        .eq('id', session.user.id);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // FORCE LA DÉCONNEXION TOTALE
-    await supabase.auth.signOut({ scope: 'global' });
-    
-    // Nettoie tout le stockage du navigateur
-    localStorage.clear();
-    sessionStorage.clear();
+      await supabase.auth.signOut({ scope: 'global' });
+      localStorage.clear();
+      sessionStorage.clear();
 
-    alert("COMPTE_DÉTRUIT : Redirection vers l'accueil.");
-    window.location.href = "/"; // Force le refresh total du site
+      alert("COMPTE_DÉTRUIT : Redirection vers l'accueil.");
+      window.location.href = "/"; 
 
-  } catch (err) {
-    alert("ERREUR : " + err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+    } catch (err) {
+      alert("ERREUR : " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const glass = dark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10';
   const inputStyle = `w-full p-5 rounded-2xl border text-[10px] outline-none mb-4 transition-all uppercase font-black italic ${
@@ -98,27 +95,47 @@ const handleDeleteAccount = async () => {
 
       <div className="space-y-8 text-left">
         
-        {/* SECTION INFOS ACTUELLES */}
+        {/* SECTION INFOS ACTUELLES (MISE À JOUR) */}
         <div className={`p-8 rounded-[40px] border ${glass}`}>
           <p className="text-[10px] opacity-40 mb-6 tracking-widest uppercase">Identité_Réseau</p>
           <div className="space-y-4">
+            
+            {/* EMAIL */}
             <div className="flex justify-between items-center border-b border-current/5 pb-4">
-              <span className="text-[10px] opacity-50">EMAIL_ACTUEL</span>
+              <span className="text-[10px] opacity-50">EMAIL_ID</span>
               <span className="text-xs normal-case font-bold">{session.user.email}</span>
             </div>
+
+            {/* NOM & PRÉNOM */}
+            <div className="flex justify-between items-center border-b border-current/5 pb-4">
+              <span className="text-[10px] opacity-50">PRÉNOM_NOM</span>
+              <span className="text-xs font-bold tracking-widest">
+                {first_name || 'N/A'} {last_name || 'N/A'}
+              </span>
+            </div>
+
+            {/* SIRET (Affiché uniquement si c'est un PRO) */}
+            {userRole === 'pro' && (
+              <div className="flex justify-between items-center border-b border-current/5 pb-4">
+                <span className="text-[10px] opacity-50">N°_SIREN_SIRET</span>
+                <span className="text-xs font-bold tracking-widest">{siret || 'NON_RENSEIGNÉ'}</span>
+              </div>
+            )}
+
+            {/* STATUT */}
             <div className="flex justify-between items-center pt-2">
               <span className="text-[10px] opacity-50">STATUT_UNITÉ</span>
               <span className={`px-4 py-1 rounded-full text-[9px] border font-black ${userRole === 'pro' ? 'border-[#bc13fe] text-[#bc13fe]' : 'border-[#00f2ff] text-[#00f2ff]'}`}>
                 {userRole.toUpperCase()}
               </span>
             </div>
+
           </div>
         </div>
 
-        {/* SECTION SÉCURITÉ (CHANGEMENT MDP) */}
+        {/* SECTION SÉCURITÉ */}
         <div className={`p-8 rounded-[40px] border ${glass}`}>
           <p className="text-[10px] opacity-40 mb-8 tracking-widest uppercase">Mise_à_jour_Sécurité</p>
-          
           <div className="space-y-1">
             <p className="text-[8px] ml-2 mb-1 opacity-40">Ancien mot de passe :</p>
             <input 
@@ -128,7 +145,6 @@ const handleDeleteAccount = async () => {
               onChange={(e) => setOldPassword(e.target.value)}
               className={inputStyle}
             />
-
             <p className="text-[8px] ml-2 mb-1 opacity-40">Nouveau mot de passe :</p>
             <input 
               type="password" 
@@ -137,7 +153,6 @@ const handleDeleteAccount = async () => {
               onChange={(e) => setNewPassword(e.target.value)}
               className={inputStyle}
             />
-
             <button 
               onClick={handleUpdatePassword}
               disabled={loading}

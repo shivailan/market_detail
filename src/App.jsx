@@ -1,13 +1,15 @@
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { useEffect, useState } from 'react';
+import { Route, BrowserRouter as Router, Routes, useParams } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 
 // --- IMPORTS DES COMPOSANTS ET PAGES ---
-import AccountSettings from './components/AccountSettings'; // Vérifie bien le chemin
+import AccountSettings from './components/AccountSettings';
 import BookingModal from './components/BookingModal';
 import Footer from './components/Footer';
 import Navbar from './components/Navbar';
+import Pricing from './components/Pricing';
 import ScrollToTop from './components/ScrollToTop';
 import Explorer from './pages/Explorer';
 import Landing from './pages/Landing';
@@ -19,7 +21,7 @@ import ProPublicProfile from './pages/ProPublicProfile';
 import Terms from './pages/Terms';
 
 export default function App() {
-  // États Globaux
+  // --- ÉTATS GLOBAUX ---
   const [session, setSession] = useState(null);
   const [view, setView] = useState('landing'); 
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -27,27 +29,34 @@ export default function App() {
   const [selectedPro, setSelectedPro] = useState(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   
-  // États Authentification
+  // --- ÉTATS AUTHENTIFICATION ---
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [siret, setSiret] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // --- ÉTATS VÉRIFICATION SIRET ---
+  const [siretStatus, setSiretStatus] = useState('idle'); 
+  const [companyName, setCompanyName] = useState('');
+
+  // --- GESTION DES FILTRES ---
   const [filters, setFilters] = useState({ expertise: '', ville: '' });
 
-  // Initialisation et Écouteurs
   useEffect(() => {
     AOS.init({ duration: 1200, once: true });
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       setSession(s);
-      if (event === 'PASSWORD_RECOVERY') {
-        setAuthMode('update_password');
-        setShowAuth(true);
+      if (s && event === 'SIGNED_IN') {
+        const role = s.user.user_metadata?.role;
+        if (role === 'pro') setView('dashboard');
+        else if(view === 'landing') setView('explorer');
       }
       if (!s && event === 'SIGNED_OUT') setView('landing'); 
     });
@@ -57,208 +66,234 @@ export default function App() {
       if (data) setPublicDetailers(data);
     };
     fetchDetailers();
-
+    
     return () => subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
   }, [view]);
 
-  // --- LOGIQUE TARIFS ---
-  const pricingPlans = [
-    {
-      name: "Starter_Unit",
-      price: "0",
-      features: ["Visibilité basique", "5 Réservations / mois", "Commission 15%", "Support Mail"],
-      color: "border-white/10",
-      btn: "Déployer_Gratuit"
-    },
-    {
-      name: "Professional_Pro",
-      price: "29",
-      features: ["Top_Ranking Explorer", "Réservations illimitées", "0% Commission", "Dashboard Avancé", "Gestion Planning"],
-      color: "border-[#bc13fe] shadow-[0_0_30px_rgba(188,19,254,0.2)]",
-      btn: "Activer_PRO",
-      popular: true
-    },
-    {
-      name: "Agency_Network",
-      price: "79",
-      features: ["Multi-comptes staff", "Statistiques Expert", "API Accès", "Support Prioritaire 24/7", "Badge Vérifié"],
-      color: "border-[#00f2ff] shadow-[0_0_30px_rgba(0,242,255,0.2)]",
-      btn: "Contact_Sales"
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+
+  const checkSiretLive = async (val) => {
+    const clean = val.replace(/\s/g, '');
+    setSiret(clean);
+    if (clean.length === 14) {
+      setSiretStatus('loading');
+      try {
+        const res = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${clean}`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          const entreprise = data.results[0];
+          const etat = entreprise.unite_legale?.etat_administratif || entreprise.etat_administratif;
+          if (etat === 'A') {
+            setSiretStatus('valid');
+            setCompanyName(entreprise.nom_complet || "UNITÉ LÉGALE ENREGISTRÉE");
+          } else {
+            setSiretStatus('invalid');
+            setCompanyName('ENTREPRISE CESSÉE');
+          }
+        } else {
+          setSiretStatus('invalid');
+          setCompanyName('SIRET INCONNU');
+        }
+      } catch { setSiretStatus('invalid'); }
+    } else {
+      setSiretStatus('idle');
+      setCompanyName('');
     }
-  ];
-
-  // Fonctions Auth
-  const handleAuth = async (role = 'client') => {
-    const { error } = authMode === 'signup' 
-      ? await supabase.auth.signUp({ 
-          email, 
-          password, 
-          options: { data: { role: role } } 
-        }) 
-      : await supabase.auth.signInWithPassword({ email, password });
-    
-    if (error) alert("Erreur: " + error.message);
-    else {
-      setShowAuth(false);
-      if (authMode === 'signup') alert("PROTOCOLE_ENVOYÉ : Vérifiez vos emails.");
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!email) return alert("Veuillez saisir votre EMAIL_ID.");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-    if (error) alert("ERREUR : " + error.message);
-    else { alert("LIEN ENVOYÉ !"); setAuthMode('login'); }
-  };
-
-  const handleUpdatePassword = async () => {
-    if (password.length < 6) return alert("6 caractères minimum.");
-    const { error } = await supabase.auth.updateUser({ password: password });
-    if (error) alert("ERREUR : " + error.message);
-    else { alert("MIS À JOUR !"); setShowAuth(false); setAuthMode('login'); setShowPassword(false); }
   };
 
   const handleSearch = (newFilters) => {
-  // On fusionne les anciens filtres avec le nouveau (ex: expertise: "Lavage Manuel")
-  setFilters(prev => ({
-    ...prev,
-    ...newFilters
-  }));
-  setView('explorer');
-};
+    setFilters(prev => ({ ...prev, ...newFilters }));
+    setView('explorer');
+  };
+
+  const handleAuth = async () => {
+    if (authMode.includes('signup')) {
+        if (!email || !password || !firstName || !lastName) return alert("REMPLISSEZ TOUT.");
+        if (!acceptedTerms) return alert("ACCEPTEZ LES CGU/CGV.");
+        if (authMode === 'signup_pro' && siretStatus !== 'valid') return alert("SIRET INVALIDE.");
+    }
+    const role = authMode === 'signup_pro' ? 'pro' : 'client';
+    const { error } = (authMode.includes('signup'))
+      ? await supabase.auth.signUp({ 
+          email, password, 
+          options: { data: { role, first_name: firstName, last_name: lastName, siret: role === 'pro' ? siret : null, status: role === 'pro' ? 'pending_verification' : 'active' } } 
+        }) 
+      : await supabase.auth.signInWithPassword({ email, password });
+    
+    if (error) alert("ERREUR : " + error.message);
+    else { setShowAuth(false); if (authMode.includes('signup')) alert("VÉRIFIEZ VOS EMAILS."); }
+  };
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden font-['Outfit'] italic uppercase text-left ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-[#fcfcfc] text-black'}`}>
-      
-      <Navbar 
-        setView={setView} 
-        view={view} 
-        session={session} 
-        dark={isDarkMode} 
-        setDark={setIsDarkMode} 
-        onAuthClick={() => { setAuthMode('login'); setShowAuth(true); }} 
-        selectedPro={selectedPro} // <--- AJOUTE CECI
-        onBackToExplorer={() => setSelectedPro(null)} // <--- AJOUTE CECI AUSSI
-      />
-
-      <main className="relative z-10 min-h-[80vh]">
-        {view === 'landing' && <Landing dark={isDarkMode} setView={setView} handleSearch={() => setView('explorer')} />}
-        {view === 'explorer' && <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} />}
-        {view === 'mes-reservations' && <MesReservations session={session} dark={isDarkMode} />}
-        {view === 'dashboard' && <ProDashboard session={session} dark={isDarkMode} />}
-        {view === 'explorer' && (
-  <Explorer 
-    filters={filters} 
-    setFilters={setFilters} 
-    /* ... autres props */ 
-  />
-)}
+    <Router>
+      <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden font-['Outfit'] italic uppercase text-left ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-[#fcfcfc] text-black'}`}>
         
-        {/* VUE TARIFS (PRICING) */}
-        {view === 'pricing' && (
-          <section className="py-32 px-6">
-            <div className="max-w-6xl mx-auto">
-              <div className="text-center mb-20" data-aos="fade-down">
-                <h2 className="text-5xl font-black italic uppercase tracking-tighter mb-4">
-                  Scale_Your_Business<span className="text-[#bc13fe]">.</span>
-                </h2>
-                <p className="opacity-40 font-bold text-xs tracking-[0.3em]">CHOISISSEZ VOTRE NIVEAU D'INTÉGRATION</p>
-              </div>
-              <div className="grid md:grid-cols-3 gap-8">
-                {pricingPlans.map((plan, idx) => (
-                  <div key={idx} data-aos="fade-up" data-aos-delay={idx * 100} className={`relative border-2 p-10 rounded-[45px] flex flex-col ${plan.color} ${isDarkMode ? 'bg-white/5 backdrop-blur-md' : 'bg-white shadow-xl'}`}>
-                    {plan.popular && (
-                      <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#bc13fe] text-white text-[9px] font-black px-5 py-2 rounded-full tracking-widest">RECOMMANDÉ</span>
-                    )}
-                    <h3 className="text-xl font-black italic mb-2">{plan.name}</h3>
-                    <div className="flex items-baseline mb-10">
-                      <span className="text-6xl font-black italic">{plan.price}€</span>
-                      <span className="text-[10px] opacity-30 ml-2">/ MOIS</span>
-                    </div>
-                    <ul className="space-y-5 mb-12 flex-grow">
-                      {plan.features.map((f, i) => (
-                        <li key={i} className="flex items-center text-[10px] font-bold tracking-wide">
-                          <span className={`mr-3 h-1.5 w-1.5 rounded-full ${plan.popular ? 'bg-[#bc13fe]' : 'bg-white/30'}`}></span>
-                          {f.toUpperCase()}
-                        </li>
-                      ))}
-                    </ul>
-                    <button onClick={() => { setAuthMode('signup'); setShowAuth(true); }} className={`w-full py-6 rounded-3xl font-black italic uppercase text-[10px] tracking-widest transition-all ${plan.popular ? 'bg-[#bc13fe] text-white hover:scale-105 shadow-lg shadow-[#bc13fe]/20' : 'border border-white/10 hover:bg-white hover:text-black'}`}>
-                      {plan.btn}
-                    </button>
+        <Navbar 
+          setView={setView} view={view} session={session} dark={isDarkMode} setDark={setIsDarkMode} 
+          onAuthClick={() => { setAuthMode('login'); setShowAuth(true); }} 
+          selectedPro={selectedPro} onBackToExplorer={() => setSelectedPro(null)}
+        />
+
+        <Routes>
+          {/* ROUTE DYNAMIQUE TYPE DOCTOLIB /pro/nom-du-studio */}
+          <Route path="/pro/:slug" element={<PublicProfileWrapper session={session} dark={isDarkMode} setIsBookingOpen={setIsBookingOpen} setSelectedPro={setSelectedPro} />} />
+
+          {/* TOUTES LES AUTRES PAGES (Logique par View) */}
+          <Route path="*" element={
+            <main className="relative z-10 min-h-[80vh]">
+              {view === 'landing' && <Landing dark={isDarkMode} setView={setView} handleSearch={handleSearch} />}
+              {view === 'explorer' && <Explorer detailers={publicDetailers} onSelectPro={setSelectedPro} dark={isDarkMode} filters={filters} setFilters={setFilters} />}
+              {view === 'mes-reservations' && <MesReservations session={session} dark={isDarkMode} />}
+              {view === 'dashboard' && <ProDashboard session={session} dark={isDarkMode} />}
+              {view === 'pricing' && <Pricing dark={isDarkMode} setShowAuth={setShowAuth} setAuthMode={setAuthMode} />}
+              {view === 'mentions' && <MentionsLegales dark={isDarkMode} />}
+              {view === 'privacy' && <Privacy dark={isDarkMode} />}
+              {view === 'terms' && <Terms dark={isDarkMode} />}
+              {view === 'profil' && <AccountSettings session={session} dark={isDarkMode} setView={setView} />}
+            </main>
+          } />
+        </Routes>
+
+        <Footer dark={isDarkMode} setView={setView} />
+        <ScrollToTop dark={isDarkMode} />
+
+        {/* --- MODALE D'AUTHENTIFICATION --- */}
+        {showAuth && (
+          <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-4 overflow-y-auto">
+              <div className={`w-full max-w-lg border-2 p-8 md:p-12 rounded-[50px] shadow-2xl relative my-auto ${isDarkMode ? 'bg-black border-white/10' : 'bg-white border-black/5'}`}>
+                  <button onClick={() => setShowAuth(false)} className="absolute top-8 right-8 opacity-20 hover:opacity-100 font-black text-xl">✕</button>
+                  <h3 className="text-3xl mb-8 text-center underline decoration-[#bc13fe] tracking-tighter font-black italic">
+                    {authMode === 'login' ? 'Connexion' : (authMode === 'signup_pro' ? 'REJOINDRE LE RÉSEAU' : 'INSCRIPTION')}
+                  </h3>
+
+                  <div className="space-y-4">
+                      {authMode.includes('signup') && (
+                          <div className="grid grid-cols-2 gap-4">
+                              <input type="text" placeholder="NOM" className={`w-full border-2 p-5 text-[11px] rounded-2xl font-black italic uppercase ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} onChange={e => setLastName(e.target.value)} />
+                              <input type="text" placeholder="PRÉNOM" className={`w-full border-2 p-5 text-[11px] rounded-2xl font-black italic uppercase ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} onChange={e => setFirstName(e.target.value)} />
+                          </div>
+                      )}
+
+                      {authMode === 'signup_pro' && (
+                          <div className="relative">
+                            <input type="text" placeholder="N° SIRET" maxLength={14} className={`w-full border-2 p-5 text-[11px] rounded-2xl font-black italic uppercase ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50'} ${siretStatus === 'valid' ? 'border-green-500/50' : siretStatus === 'invalid' ? 'border-red-500/50' : ''}`} onChange={e => checkSiretLive(e.target.value)} />
+                            <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                              {siretStatus === 'loading' && <div className="w-4 h-4 border-2 border-[#bc13fe] border-t-transparent rounded-full animate-spin"></div>}
+                              {siretStatus === 'valid' && <i className="fas fa-check-circle text-green-500 text-lg"></i>}
+                              {siretStatus === 'invalid' && <i className="fas fa-times-circle text-red-500 text-lg"></i>}
+                            </div>
+                            {companyName && <p className="text-[8px] mt-2 ml-2 text-green-500 font-black italic">{companyName}</p>}
+                          </div>
+                      )}
+
+                      <input type="email" placeholder="EMAIL" className={`w-full border-2 p-5 text-[11px] rounded-2xl font-black italic ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} onChange={e => setEmail(e.target.value)} />
+                      
+                      <div className="relative">
+                        <input type={showPassword ? "text" : "password"} placeholder="MOT DE PASSE" className={`w-full border-2 p-5 text-[11px] rounded-2xl font-black italic ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} onChange={e => setPassword(e.target.value)} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-6 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 transition-opacity">
+                          <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                        </button>
+                      </div>
+
+                      {authMode.includes('signup') && (
+                          <label className="flex items-center gap-3 cursor-pointer group py-2">
+                              <input type="checkbox" className="w-4 h-4 rounded accent-[#bc13fe]" onChange={e => setAcceptedTerms(e.target.checked)} />
+                              <span className="text-[9px] font-black opacity-40 uppercase italic">J'ACCEPTE LES <button onClick={() => {setView('terms'); setShowAuth(false);}} className="underline">CGU / CGV</button></span>
+                          </label>
+                      )}
+
+                      <button onClick={handleAuth} disabled={authMode === 'signup_pro' && siretStatus !== 'valid'} className={`w-full py-6 rounded-[25px] uppercase text-[12px] font-black italic transition-all ${isDarkMode ? 'bg-white text-black hover:bg-[#bc13fe] hover:text-white' : 'bg-black text-white'} ${(authMode === 'signup_pro' && siretStatus !== 'valid') ? 'opacity-20 cursor-not-allowed' : ''}`}>
+                        {authMode === 'login' ? 'SE CONNECTER' : 'CONFIRMER INSCRIPTION'}
+                      </button>
+
+                      <div className="mt-10 space-y-3 pt-6 border-t border-white/5">
+                          {authMode === 'login' ? (
+                              <div className="flex flex-col gap-3">
+                                  <button onClick={() => setAuthMode('signup_client')} className={`w-full py-4 rounded-xl text-[10px] font-black italic transition-all border ${isDarkMode ? 'border-white/10 hover:bg-white/5 text-white/50 hover:text-white' : 'border-black/10 hover:bg-black/5 text-black/50 hover:text-black'}`}>
+                                    PAS ENCORE DE COMPTE ? <span className="underline ml-1 text-[#bc13fe]">S'INSCRIRE</span>
+                                  </button>
+                                  <button onClick={() => setAuthMode('signup_pro')} className="w-full py-4 rounded-xl text-[10px] font-black italic transition-all border-2 border-[#bc13fe]/30 hover:border-[#bc13fe] bg-[#bc13fe]/5 text-[#bc13fe]">
+                                    VOUS ÊTES UN PROFESSIONNEL ? <span className="underline ml-1">REJOINDRE LE RÉSEAU</span>
+                                  </button>
+                              </div>
+                          ) : (
+                              <div className="flex flex-col gap-3">
+                                  <button onClick={() => setAuthMode('login')} className="w-full text-center py-2 text-[10px] font-black italic opacity-40 hover:opacity-100 transition-opacity">
+                                      DÉJÀ INSCRIT ? <span className="underline ml-1">SE CONNECTER</span>
+                                  </button>
+                                  {authMode === 'signup_client' && (
+                                      <button onClick={() => setAuthMode('signup_pro')} className="w-full py-3 rounded-xl text-[9px] font-black italic transition-all border border-[#bc13fe]/20 hover:border-[#bc13fe] text-[#bc13fe]/60 hover:text-[#bc13fe]">
+                                          VOUS ÊTES UN PROFESSIONNEL ? <span className="underline ml-1 uppercase">S'inscrire comme pro</span>
+                                      </button>
+                                  )}
+                              </div>
+                          )}
+                      </div>
                   </div>
-                ))}
               </div>
-            </div>
-          </section>
+          </div>
         )}
 
-        {view === 'mentions' && <MentionsLegales dark={isDarkMode} />}
-        {view === 'privacy' && <Privacy dark={isDarkMode} />}
-        {view === 'terms' && <Terms dark={isDarkMode} />}
-        {view === 'profil' && (
-  <AccountSettings 
-    session={session} 
-    dark={isDarkMode} 
-    setView={setView} 
-  />
-)}
-      </main>
+        {/* --- MODALES DE PROFIL ET BOOKING --- */}
+        {selectedPro && <ProPublicProfile pro={selectedPro} session={session} onClose={() => setSelectedPro(null)} onBookingClick={() => setIsBookingOpen(true)} dark={isDarkMode} />}
+        {isBookingOpen && selectedPro && <BookingModal pro={selectedPro} session={session} onClose={() => setIsBookingOpen(false)} dark={isDarkMode} setView={setView} />}
+      </div>
+    </Router>
+  );
+}
 
-      <Footer dark={isDarkMode} setView={setView} />
-      <ScrollToTop dark={isDarkMode} />
+/**
+ * WRAPPER POUR CHARGER UN PRO DEPUIS L'URL /pro/:slug
+ */function PublicProfileWrapper({ session, dark, setIsBookingOpen, setSelectedPro }) {
+  const { slug } = useParams();
+  const [pro, setPro] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-      {/* --- MODALS --- */}
-      {selectedPro && <ProPublicProfile pro={selectedPro} onClose={() => setSelectedPro(null)} onBookingClick={() => setIsBookingOpen(true)} dark={isDarkMode} />}
-      {isBookingOpen && selectedPro && <BookingModal pro={selectedPro} session={session} onClose={() => setIsBookingOpen(false)} dark={isDarkMode} setView={setView} />}
+  useEffect(() => {
+    const fetchProBySlug = async () => {
+      setLoading(true);
+      // Log pour vérifier que le slug arrive bien dans le code
+      console.log("Recherche du slug :", slug);
 
-      {showAuth && (
-        <div className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
-            <div className={`w-full max-w-sm border p-12 rounded-[60px] shadow-2xl relative ${isDarkMode?'bg-white/5 border-white/10':'bg-white border-black/5'}`}>
-                <button onClick={() => setShowAuth(false)} className="absolute top-8 right-8 opacity-20 hover:opacity-100 font-black text-xl">✕</button>
-                <h3 className="text-2xl mb-10 text-center underline decoration-[#bc13fe] tracking-tighter italic font-black uppercase">
-                  {authMode === 'login' && 'Accès_Session'}
-                  {authMode === 'signup' && 'Nouveau_Membre'}
-                  {authMode === 'forgot_password' && 'Récupération_Accès'}
-                  {authMode === 'update_password' && 'Nouveau_Mot_De_Passe'}
-                </h3>
-                <div className="space-y-4">
-                    {authMode !== 'update_password' && (
-                      <input type="email" placeholder="EMAIL_ID" autoCapitalize="none" spellCheck="false" className={`w-full border p-6 text-[10px] rounded-3xl font-black italic normal-case ${isDarkMode?'bg-black text-white border-white/10':'bg-slate-50 text-black border-black/10'}`} onChange={e => setEmail(e.target.value)} />
-                    )}
-                    {authMode !== 'forgot_password' && (
-                      <div className="relative">
-                        <input type={showPassword ? "text" : "password"} placeholder={authMode === 'update_password' ? "NOUVEAU_PASSWORD" : "SECURE_HASH"} className={`w-full border p-6 text-[10px] rounded-3xl font-black italic normal-case ${isDarkMode?'bg-black text-white border-white/10':'bg-slate-50 text-black border-black/10'}`} onChange={e => setPassword(e.target.value)} />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-6 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i></button>
-                      </div>
-                    )}
-                    {authMode === 'login' && (
-                      <button onClick={() => setAuthMode('forgot_password')} className="text-[9px] opacity-40 hover:opacity-100 mt-2 text-right block w-full italic">MOT_DE_PASSE_OUBLIÉ_?</button>
-                    )}
-                    
-                    {authMode === 'update_password' ? (
-                        <button onClick={handleUpdatePassword} className="w-full bg-[#00f2ff] text-black py-6 rounded-3xl uppercase text-[10px] font-black italic shadow-xl">CONFIRMER_NOUVEL_ACCÈS</button>
-                    ) : authMode === 'forgot_password' ? (
-                        <button onClick={handleForgotPassword} className="w-full bg-[#bc13fe] text-white py-6 rounded-3xl uppercase text-[10px] font-black italic shadow-xl">RÉINITIALISER_ACCÈS</button>
-                    ) : authMode === 'login' ? (
-                        <button onClick={() => handleAuth()} className="w-full bg-white text-black py-6 rounded-3xl uppercase text-[10px] font-black italic hover:bg-[#bc13fe] hover:text-white transition-all shadow-xl">Connecter_Unité</button>
-                    ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => handleAuth('pro')} className="border border-[#bc13fe] text-[#bc13fe] py-5 rounded-2xl text-[9px] font-black hover:bg-[#bc13fe] hover:text-white transition-all uppercase italic">Expert_Pro</button>
-                            <button onClick={() => handleAuth('client')} className="border border-white/20 py-5 rounded-2xl text-[9px] font-black opacity-40 hover:opacity-100 uppercase italic">Client_User</button>
-                        </div>
-                    )}
-                    <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setShowPassword(false); }} className="w-full text-[8px] opacity-30 mt-6 underline text-center font-bold tracking-widest italic">
-                      {authMode === 'update_password' || authMode === 'forgot_password' ? "RETOUR_CONNEXION" : (authMode === 'login' ? "CRÉER UN COMPTE" : "DÉJÀ INSCRIT ?")}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
+      const { data, error } = await supabase
+        .from('profiles_pro')
+        .select('*')
+        .eq('slug', slug)
+        .maybeSingle();
+      
+      if (data) {
+        setPro(data);
+        // Important : on s'assure que selectedPro global est mis à jour
+        setSelectedPro(data); 
+      }
+      setLoading(false);
+    };
+    fetchProBySlug();
+  }, [slug, setSelectedPro]);
+
+  if (loading) return (
+    <div className="h-screen flex items-center justify-center font-black italic text-[#bc13fe] animate-pulse uppercase tracking-[0.5em] bg-[#050505]">
+      Sync_Command_Center...
+    </div>
+  );
+  
+  if (!pro) return (
+    <div className="h-screen flex flex-col items-center justify-center space-y-4 bg-[#050505] text-white">
+      <h2 className="text-2xl font-black italic uppercase">Studio_Introuvable</h2>
+      <button onClick={() => window.location.href = '/'} className="text-[#bc13fe] underline text-xs font-black italic uppercase">Retour_Accueil</button>
+    </div>
+  );
+
+  // Ici on retourne DIRECTEMENT le composant sans passer par le switch 'view'
+  return (
+    <div className="fixed inset-0 z-[3000] bg-[#050505]">
+      <ProPublicProfile 
+        pro={pro} 
+        session={session} 
+        onClose={() => window.location.href = '/'} 
+        onBookingClick={() => setIsBookingOpen(true)} 
+        dark={dark} 
+      />
     </div>
   );
 }

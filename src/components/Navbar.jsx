@@ -1,137 +1,156 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-export default function Navbar({ setView, view, session, dark, setDark, onAuthClick, selectedPro, onBackToExplorer }) {
+export default function Navbar({ setView, view, session, dark, setDark, onAuthClick, selectedPro, onBackToExplorer, setSession }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  // --- NOUVELLE FONCTION DE DÉCONNEXION SÉCURISÉE ---
+  const handleSignOut = async () => {
+    try {
+      // On tente la déconnexion Supabase
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Erreur déconnexion:", error);
+    } finally {
+      // QUOI QU'IL ARRIVE : On nettoie l'interface
+      if (setSession) setSession(null);
+      setView('landing');
+      setIsOpen(false);
+      
+      // Nettoyage radical pour éviter les erreurs de token (403)
+      localStorage.clear();
+      
+      // On force le rafraîchissement vers l'accueil pour réinitialiser l'état propre
+      window.location.href = "/";
+    }
+  };
 
   const userRole = session?.user?.user_metadata?.role || session?.user?.role;
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0];
 
-  const glassClass = dark ? 'bg-black/40 border-white/10' : 'bg-white/40 border-black/10';
+  const glassClass = dark ? 'bg-black/80 border-white/10' : 'bg-white/90 border-black/10 shadow-sm';
+  const linkClass = "relative py-1 transition-all duration-300 hover:text-[#bc13fe] tracking-widest font-black uppercase text-[12px]";
+  const activeLine = "absolute -bottom-1 left-0 w-full h-[3px] bg-[#bc13fe] animate-in slide-in-from-left-2 duration-500";
 
   return (
-    <nav className={`fixed top-0 left-0 w-full z-[2000] p-6 md:p-8 lg:p-10 flex justify-between items-center font-black italic transition-all duration-500 backdrop-blur-xl border-b ${glassClass} ${dark ? 'text-white' : 'text-black'}`}>
+    <nav className={`fixed top-0 left-0 w-full z-[2000] px-6 py-4 md:px-10 md:py-6 flex justify-between items-center italic transition-all duration-500 backdrop-blur-2xl border-b ${glassClass} ${dark ? 'text-white' : 'text-black'}`}>
       
       {selectedPro ? (
         <div className="flex items-center justify-between w-full animate-in fade-in duration-500">
-          <div className="logo-font text-[14px] md:text-[16px] font-bold tracking-[0.6em] uppercase opacity-20">
+          <div className="logo-font text-[16px] md:text-[20px] font-black tracking-[0.4em] uppercase opacity-30">
             DetailPlan
           </div>
           <button 
             onClick={onBackToExplorer}
-            className="flex items-center gap-3 px-6 py-3 rounded-full border border-[#bc13fe] text-[#bc13fe] text-[10px] tracking-widest uppercase hover:bg-[#bc13fe] hover:text-white transition-all shadow-[0_0_20px_rgba(188,19,254,0.2)]"
+            className="flex items-center gap-3 px-8 py-3 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] text-[11px] tracking-widest uppercase font-black hover:bg-[#bc13fe] hover:text-white transition-all shadow-[0_0_20px_rgba(188,19,254,0.2)]"
           >
-            <i className="fas fa-arrow-left text-[8px]"></i>
+            <i className="fas fa-arrow-left text-[10px]"></i>
             <span>Retour_Explorer</span>
           </button>
         </div>
       ) : (
         <>
+          {/* LOGO */}
           <div 
-            className="logo-font text-[14px] md:text-[16px] font-bold tracking-[0.6em] md:tracking-[0.8em] uppercase cursor-pointer hover:scale-105 transition-transform z-[2100]" 
+            className="logo-font text-[18px] md:text-[22px] font-black tracking-[0.4em] uppercase cursor-pointer hover:scale-105 transition-transform z-[2100]" 
             onClick={() => { setView('landing'); setIsOpen(false); }}
           >
-            DetailPlan
+            Detail<span className="text-[#bc13fe]">Plan</span>
           </div>
           
-          <div className="hidden lg:flex gap-10 text-[9px] uppercase tracking-[0.4em] items-center">
-            <button onClick={() => setView('landing')} className={`hover:text-[#bc13fe] transition-colors ${view === 'landing' ? 'text-[#bc13fe]' : ''}`}>Accueil</button>
-            <button onClick={() => setView('explorer')} className={`hover:text-[#bc13fe] transition-colors ${view === 'explorer' ? 'text-[#bc13fe]' : ''}`}>Explorer</button>
+          {/* NAVIGATION DESKTOP */}
+          <div className="hidden lg:flex gap-14 items-center">
+            <button onClick={() => setView('landing')} className={linkClass}>
+              Accueil
+              {view === 'landing' && <div className={activeLine}></div>}
+            </button>
+            
+            <button onClick={() => setView('explorer')} className={linkClass}>
+              TROUVER MON EXPERT
+              {view === 'explorer' && <div className={activeLine}></div>}
+            </button>
             
             <button 
               onClick={() => setView('pricing')} 
-              className={`hover:text-[#00f2ff] transition-colors ${view === 'pricing' ? 'text-[#00f2ff]' : 'opacity-60'}`}
+              className={`${linkClass} hover:text-[#00f2ff] ${view === 'pricing' ? 'text-[#00f2ff]' : 'opacity-60'}`}
             >
-              Tarifs_Pro
+              VOUS ÊTES PRO ?
+              {view === 'pricing' && <div className="absolute -bottom-1 left-0 w-full h-[3px] bg-[#00f2ff]"></div>}
             </button>
 
             {session && (
               <button 
                 onClick={() => setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations')} 
-                className={`px-4 py-1 border border-current/30 rounded-full transition-all 
+                className={`ml-4 px-8 py-3 border-2 rounded-2xl transition-all font-black text-[11px] tracking-widest
                   ${view === 'dashboard' || view === 'mes-reservations' 
-                    ? 'bg-[#bc13fe] border-[#bc13fe] text-white' 
-                    : 'hover:border-[#bc13fe] hover:text-[#bc13fe]'}
+                    ? 'bg-[#bc13fe] border-[#bc13fe] text-white shadow-[0_10px_20px_rgba(188,19,254,0.3)]' 
+                    : 'border-[#bc13fe] text-[#bc13fe] hover:bg-[#bc13fe] hover:text-white'}
                 `}
               >
-                {userRole === 'pro' ? 'Mon_Atelier' : 'Mes_Missions'}
+                {userRole === 'pro' ? 'MON_ATELIER' : 'MES_MISSIONS'}
               </button>
             )}
           </div>
 
-          {/* ACTIONS DROITE (Desktop) */}
+          {/* ACTIONS DROITE */}
           <div className="hidden lg:flex items-center gap-6">
             {session ? (
-              <div className="flex items-center gap-4">
-                {/* BLOC PROFIL CLIQUABLE */}
+              <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setView('profil')}
-                  className={`flex items-center gap-3 px-4 py-2 rounded-full border transition-all hover:border-[#00f2ff] group ${dark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/5'}`}
+                  className={`flex items-center gap-5 px-6 py-3 rounded-2xl border-2 transition-all hover:border-[#00f2ff] group ${dark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/5'}`}
                 >
-                  <div className="relative h-2 w-2">
-                    <span className="animate-ping absolute h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="text-[11px] font-black tracking-widest group-hover:text-[#00f2ff] transition-colors">{displayName.toUpperCase()}</span>
+                  <div className="h-8 w-8 rounded-xl bg-[#00f2ff]/10 flex items-center justify-center text-[#00f2ff] border border-[#00f2ff]/20 group-hover:rotate-12 transition-transform">
+                    <i className="fas fa-user-gear text-[12px]"></i>
                   </div>
-                  <span className="text-[9px] tracking-[0.2em] group-hover:text-[#00f2ff] transition-colors">{displayName}</span>
-                  <i className="fas fa-cog text-[8px] opacity-30 group-hover:rotate-90 transition-all"></i>
                 </button>
 
                 <button 
-                  onClick={() => supabase.auth.signOut()} 
-                  className="text-[14px] opacity-30 hover:opacity-100 hover:text-red-500 transition-all p-2"
-                  title="Déconnexion"
+                  onClick={handleSignOut} 
+                  className="w-12 h-12 flex items-center justify-center rounded-2xl opacity-30 hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all border-2 border-transparent hover:border-red-500/20"
                 >
-                  <i className="fas fa-power-off"></i>
+                  <i className="fas fa-power-off text-lg"></i>
                 </button>
               </div>
             ) : (
-              <button onClick={onAuthClick} className={`px-8 py-3 rounded-full text-[9px] font-black tracking-[0.3em] uppercase transition-all ${dark ? 'bg-white text-black' : 'bg-black text-white'}`}>Connexion</button>
+              <button onClick={onAuthClick} className={`px-12 py-4 rounded-2xl text-[12px] font-black tracking-widest uppercase transition-all shadow-xl hover:scale-105 active:scale-95 ${dark ? 'bg-white text-black hover:bg-[#00f2ff]' : 'bg-black text-white hover:bg-[#bc13fe]'}`}>
+                CONNEXION
+              </button>
             )}
           </div>
 
-          <button onClick={() => setIsOpen(!isOpen)} className="flex lg:hidden flex-col gap-1.5 z-[2100] relative p-2">
-            <span className={`w-6 h-[2px] bg-current transition-all duration-300 ${isOpen ? 'rotate-45 translate-y-2 text-[#00f2ff]' : ''}`}></span>
-            <span className={`w-6 h-[2px] bg-current transition-all duration-300 ${isOpen ? 'opacity-0' : ''}`}></span>
-            <span className={`w-6 h-[2px] bg-current transition-all duration-300 ${isOpen ? '-rotate-45 -translate-y-2 text-[#00f2ff]' : ''}`}></span>
+          {/* BURGER MOBILE */}
+          <button onClick={() => setIsOpen(!isOpen)} className="flex lg:hidden flex-col gap-1.5 z-[2100] relative p-4 rounded-2xl bg-white/5 border border-white/10">
+            <span className={`w-8 h-[3px] bg-current transition-all duration-300 ${isOpen ? 'rotate-45 translate-y-2 text-[#00f2ff]' : ''}`}></span>
+            <span className={`w-5 h-[3px] bg-current transition-all duration-300 ${isOpen ? 'opacity-0' : ''}`}></span>
+            <span className={`w-8 h-[3px] bg-current transition-all duration-300 ${isOpen ? '-rotate-45 -translate-y-2 text-[#00f2ff]' : ''}`}></span>
           </button>
 
-          {/* MENU OVERLAY MOBILE */}
-          <div className={`fixed inset-0 h-screen w-screen bg-[#050505] z-[2050] flex flex-col items-center justify-between py-24 transition-transform duration-500 lg:hidden ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-[#bc13fe]/20 blur-[100px] rounded-full pointer-events-none"></div>
-            
-            {/* Profil Mobile */}
-            <div className="relative z-10 flex flex-col items-center gap-4">
-              {session ? (
-                <button 
-                  onClick={() => { setView('profil'); setIsOpen(false); }}
-                  className="flex flex-col items-center group"
-                >
-                  <div className="w-16 h-16 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-4 text-[#00f2ff] group-active:scale-95 transition-all">
-                    <i className="fas fa-user-gear text-xl"></i>
-                  </div>
-                  <span className="text-white text-xs tracking-[0.3em] font-black uppercase">{displayName}</span>
-                  <span className="text-[8px] text-[#00f2ff] mt-2 opacity-60">Modifier le profil</span>
-                </button>
-              ) : (
-                <div className="text-[10px] text-white/20 tracking-[0.5em]">GUEST_MODE</div>
-              )}
-            </div>
 
-            <div className="flex flex-col gap-6 text-center relative z-10">
-              <button onClick={() => { setView('landing'); setIsOpen(false); }} className="text-4xl italic font-black uppercase tracking-tighter text-white hover:text-[#00f2ff]">ACCUEIL_</button>
-              <button onClick={() => { setView('explorer'); setIsOpen(false); }} className="text-4xl italic font-black uppercase tracking-tighter text-white hover:text-[#00f2ff]">EXPLORER_</button>
-              <button onClick={() => { setView('pricing'); setIsOpen(false); }} className="text-4xl italic font-black uppercase tracking-tighter text-[#00f2ff]">TARIFS_PRO</button>
+          {/* MENU OVERLAY MOBILE */}
+          <div className={`fixed inset-0 h-screen w-screen bg-[#050505] z-[2050] flex flex-col items-center justify-between py-24 transition-all duration-500 lg:hidden ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#bc13fe]/10 blur-[120px] rounded-full pointer-events-none"></div>
+            
+            <div className="relative z-10 flex flex-col items-center gap-10 text-center">
+              <button onClick={() => { setView('landing'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-white active:text-[#00f2ff]">ACCUEIL</button>
+              <button onClick={() => { setView('explorer'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-white active:text-[#00f2ff]">EXPLORER</button>
+              <button onClick={() => { setView('pricing'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-[#00f2ff]">TARIFS</button>
               {session && (
-                 <button onClick={() => { setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations'); setIsOpen(false); }} className="text-4xl italic font-black uppercase tracking-tighter text-[#bc13fe]">
-                   {userRole === 'pro' ? 'ATELIER_' : 'MISSIONS_'}
+                 <button onClick={() => { setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-[#bc13fe]">
+                   {userRole === 'pro' ? 'ATELIER' : 'MISSIONS'}
                  </button>
               )}
             </div>
 
             <div className="relative z-10 flex flex-col items-center gap-6 w-full px-12">
+               {session && (
+                  <button onClick={() => { setView('profil'); setIsOpen(false); }} className="text-white/40 text-[10px] tracking-[0.5em] mb-4 uppercase underline underline-offset-8">Réglages_Profil</button>
+               )}
               {session ? (
-                <button onClick={() => { supabase.auth.signOut(); setIsOpen(false); }} className="text-[10px] text-red-500 font-black tracking-[0.4em] uppercase py-4 w-full border border-red-500/20 rounded-2xl">DÉCONNEXION</button>
+                <button onClick={handleSignOut} className="text-[11px] text-red-500 font-black tracking-[0.3em] uppercase py-5 w-full border border-red-500/30 rounded-2xl bg-red-500/5">DÉCONNEXION</button>
               ) : (
-                <button onClick={() => { onAuthClick(); setIsOpen(false); }} className="px-10 py-5 bg-[#bc13fe] text-white rounded-full text-xs font-black tracking-widest shadow-xl w-full">CONNEXION_UNIT</button>
+                <button onClick={() => { onAuthClick(); setIsOpen(false); }} className="px-10 py-6 bg-[#bc13fe] text-white rounded-2xl text-[11px] font-black tracking-[0.3em] shadow-2xl w-full">ACCÈS_PLATEFORME</button>
               )}
             </div>
           </div>

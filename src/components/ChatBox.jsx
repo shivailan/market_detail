@@ -4,9 +4,19 @@ import { supabase } from '../lib/supabase';
 export default function ChatBox({ receiverId, receiverName, senderId, onClose, dark }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [sessionUser, setSessionUser] = useState(null);
   const scrollRef = useRef();
 
-  // 1. CHARGEMENT INITIAL + TEMPS RÉEL
+  // 1. RÉCUPÉRATION DE LA SESSION POUR LE NOM DE L'EXPÉDITEUR
+  useEffect(() => {
+    const getSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      setSessionUser(data.session?.user || null);
+    };
+    getSession();
+  }, []);
+
+  // 2. CHARGEMENT INITIAL + TEMPS RÉEL
   useEffect(() => {
     if (!receiverId || !senderId) return;
 
@@ -27,8 +37,7 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
     const channel = supabase.channel(`chat-${receiverId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const msg = payload.new;
-        // IMPORTANT: On n'ajoute ici que les messages reçus de l'AUTRE
-        // Pour éviter de doubler nos propres messages envoyés instantanément
+        // On n'ajoute que les messages reçus de l'AUTRE pour éviter les doublons
         if (msg.sender_id === receiverId && msg.receiver_id === senderId) {
           setMessages(prev => [...prev, msg]);
         }
@@ -38,47 +47,54 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
     return () => supabase.removeChannel(channel);
   }, [receiverId, senderId]);
 
-  // Auto-scroll à chaque nouveau message
+  // Auto-scroll
   useEffect(() => { 
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [messages]);
 
-  // 2. FONCTION D'ENVOI (INSTANTANÉE / OPTIMISTIQUE)
+  // 3. FONCTION D'ENVOI (AVEC ENREGISTREMENT DES NOMS)
   const sendMessage = async (e) => {
     e.preventDefault();
     const content = newMessage.trim();
     if (!content) return;
 
-    // A. Création du message temporaire pour l'UI
+    // --- CONSTRUCTION DU NOM DE L'EXPÉDITEUR ---
+    // On cherche d'abord dans les métadonnées (nom/prénom), sinon on prend l'email
+    const meta = sessionUser?.user_metadata;
+    const myName = meta?.first_name 
+      ? `${meta.first_name} ${meta.last_name || ''}`.trim() 
+      : meta?.name || sessionUser?.email?.split('@')[0] || "UTILISATEUR";
+
+    // A. Message temporaire pour l'UI (Optimistic Update)
     const tempMsg = {
       id: 'temp-' + Date.now(),
       sender_id: senderId,
       receiver_id: receiverId,
       content: content,
+      sender_name: myName,
       created_at: new Date().toISOString(),
-      isSending: true // Pour un petit effet visuel
+      isSending: true
     };
 
-    // B. Mise à jour locale immédiate (on voit le message partir direct)
     setMessages(prev => [...prev, tempMsg]);
-    setNewMessage(''); // Vide l'input direct
+    setNewMessage('');
 
-    // C. Envoi réel en arrière-plan
+    // B. Envoi réel à Supabase
     const { error } = await supabase.from('messages').insert([
       { 
         sender_id: senderId, 
         receiver_id: receiverId, 
-        content: content 
+        content: content,
+        sender_name: myName,        // ON ENREGISTRE TON NOM
+        receiver_name: receiverName  // ON ENREGISTRE LE NOM DU DESTINATAIRE
       }
     ]);
 
     if (error) {
       console.error("ERREUR D'ENVOI:", error.message);
-      // On retire le message s'il y a eu un échec
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id));
-      alert("Erreur d'envoi réseau.");
+      alert("Erreur de connexion.");
     } else {
-      // On enlève le flag 'isSending' une fois confirmé (optionnel)
       setMessages(prev => prev.map(m => m.id === tempMsg.id ? { ...m, isSending: false } : m));
     }
   };
@@ -89,8 +105,8 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
     <div className={`fixed bottom-6 right-6 w-80 md:w-96 h-[550px] border shadow-2xl rounded-[35px] flex flex-col z-[9999] overflow-hidden ${glass} backdrop-blur-3xl animate-in slide-in-from-bottom-10`}>
       
       {/* HEADER */}
-      <div className="p-6 border-b border-current/10 flex justify-between items-center italic font-black text-[10px] bg-current/5 tracking-widest">
-        <span>SESSION: {receiverName}</span>
+      <div className="p-6 border-b border-current/10 flex justify-between items-center italic font-black text-[10px] bg-current/5 tracking-widest uppercase">
+        <span>SESSION: {receiverName || "COMMUNICATION_UNIT"}</span>
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-all">✕</button>
       </div>
 
@@ -99,7 +115,7 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
         {messages.map((m) => {
           const isMe = m.sender_id === senderId;
           return (
-            <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+            <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[85%] p-4 rounded-[22px] text-[11px] font-bold italic shadow-md transition-all duration-300 ${
                 isMe 
                   ? `bg-[#bc13fe] text-white rounded-tr-none ${m.isSending ? 'opacity-60 scale-95' : 'opacity-100 scale-100'}` 
@@ -107,6 +123,9 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
               }`}>
                 {m.content}
               </div>
+              <span className="text-[6px] opacity-30 mt-1 uppercase font-black tracking-tighter">
+                {isMe ? 'VOUS' : m.sender_name || receiverName} • {new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </span>
             </div>
           );
         })}
@@ -120,7 +139,6 @@ export default function ChatBox({ receiverId, receiverName, senderId, onClose, d
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="TAPER_MESSAGE..."
-          // Couleur forcée pour éviter le blanc sur blanc
           className={`flex-1 border-none rounded-full px-6 py-4 text-[10px] font-black italic outline-none shadow-inner
             ${dark ? 'bg-white/5 text-white' : 'bg-black/5 text-black'}`}
         />
