@@ -3,7 +3,6 @@ import { fr } from 'date-fns/locale';
 import { useState } from 'react';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
-import { supabase } from '../lib/supabase';
 
 export default function BookingModal({ pro, session, onClose, dark, setView }) {
   const [step, setStep] = useState(1);
@@ -60,36 +59,44 @@ export default function BookingModal({ pro, session, onClose, dark, setView }) {
   const dynamicSlots = generateAvailableSlots();
 
   // --- FONCTION FINALE : INSERTION AVEC CODE DE VALIDATION ---
-  const handleFinalize = async () => {
-    if (!session?.user?.id) return alert("Veuillez vous connecter.");
-    setLoading(true);
+const handleFinalize = async () => {
+  if (!session?.user?.id) return alert("Veuillez vous connecter.");
+  setLoading(true);
 
-    // 1. GÉNÉRATION DU CODE DE SÉCURITÉ (DP-XXXX)
-    const secureCode = "DP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+  try {
+    const response = await fetch('http://localhost:3000/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        serviceName: selectedService.titre || selectedService.service,
+        price: selectedService.price,
+        metadata: {
+          pro_id: pro.id,
+          client_email: session.user.email,
+          service_name: selectedService.titre || selectedService.service, 
+          date: format(selectedDate, 'yyyy-MM-dd'), 
+          time: selectedTime,
+        }
+      }),
+    });
 
-    // 2. INSERTION DANS LA TABLE APPOINTMENTS (AVEC TES COLONNES EXACTES)
-    const { error } = await supabase.from('appointments').insert([{
-      pro_id: pro.id,
-      client_id: session.user.id,
-      client_name: session.user.user_metadata?.full_name || session.user.email,
-      appointment_date: format(selectedDate, 'yyyy-MM-dd'),
-      appointment_time: selectedTime,
-      service_selected: selectedService.titre || selectedService.service, // On prend le titre du service
-      total_price: selectedService.price,
-      validation_code: secureCode, // Ton code généré
-      payment_status: 'escrow',   // On bloque l'argent fictivement
-      status: 'confirmé'          // Statut initial
-    }]);
+    const data = await response.json();
 
-    if (error) {
-      alert("ERREUR_SYSTÈME : " + error.message);
+    if (data.url) {
+      window.location.href = data.url;
     } else {
-      alert(`MISSION_SÉCURISÉE !\n\nCODE DE VALIDATION : ${secureCode}\n\nL'argent est bloqué. Donnez ce code au pro uniquement après le travail.`);
-      onClose();
-      if (setView) setView('mes-reservations');
+      throw new Error(data.error || "Impossible de générer le lien de paiement.");
     }
+
+  } catch (error) {
+    console.error("ERREUR_STRIPE :", error);
+    alert("ERREUR_SYSTÈME : " + error.message);
+  } finally {
     setLoading(false);
-  };
+  }
+};
 
   const glass = dark ? 'bg-[#050505] text-white border-white/10' : 'bg-white text-black border-black/10';
 

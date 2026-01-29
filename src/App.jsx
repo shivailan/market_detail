@@ -3,6 +3,7 @@ import 'aos/dist/aos.css';
 import { useEffect, useState } from 'react';
 import { Route, BrowserRouter as Router, Routes, useParams } from 'react-router-dom';
 import { supabase } from './lib/supabase';
+import React from 'react';
 
 // --- IMPORTS DES COMPOSANTS ET PAGES ---
 import AccountSettings from './components/AccountSettings';
@@ -346,4 +347,7 @@ function PublicProfileWrapper({ session, dark, setIsBookingOpen, setSelectedPro 
       />
     </div>
   );
+
+  
 }
+

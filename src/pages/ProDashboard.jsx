@@ -13,6 +13,17 @@ import ChatBox from '../components/ChatBox';
 import { supabase } from '../lib/supabase';
 import { uploadImage } from '../utils/storage';
 
+// ... tes imports (supabase, date-fns, etc.)
+
+// DEPLACE LE BLOC ICI (LIGNE 16 ENVIRON)
+const statusColors = {
+  'en attente': 'border-[#bc13fe] text-[#bc13fe]',
+  'confirmé': 'border-[#00f2ff] text-[#00f2ff]',
+  'terminé': 'border-green-500 text-green-500',
+  'refusé': 'border-red-500 text-red-500',
+  'annulé': 'border-red-500 text-red-500'
+};
+
 export default function ProDashboard({ session, dark }) {
   // --- ÉTATS ---
   const [profile, setProfile] = useState(null);
@@ -24,6 +35,7 @@ export default function ProDashboard({ session, dark }) {
   const [statusFilter, setStatusFilter] = useState('tous');
   const [viewMode, setViewMode] = useState('workWeek'); 
   const [currentDate, setCurrentDate] = useState(new Date());
+
 
   const profileUrl = `${window.location.origin}/pro/${profile?.slug}`;
 
@@ -57,6 +69,19 @@ export default function ProDashboard({ session, dark }) {
       };
     });
   };
+
+  const handleConnectStripe = async () => {
+  const response = await fetch('http://localhost:3000/create-connect-account', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      userId: session.user.id, 
+      email: session.user.email 
+    }),
+  });
+  const data = await response.json();
+  if (data.url) window.location.href = data.url; // Redirige vers l'onboarding Stripe
+};
 
   const activityData = getActivityData();
 
@@ -93,11 +118,30 @@ export default function ProDashboard({ session, dark }) {
   }, [session?.user?.id]);
 
   // --- STATISTIQUES ---
+// --- STATISTIQUES MISES À JOUR ---
   const stats = {
-    totalRevenue: appointments.filter(a => a.status === 'terminé').reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+    // Argent total des missions finies
+    totalRevenue: appointments
+      .filter(a => a.status === 'terminé')
+      .reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+
+    // Missions qui attendent d'être acceptées
     pendingMissions: appointments.filter(a => a.status === 'en attente').length,
+
+    // Missions acceptées et en cours
     activeMissions: appointments.filter(a => a.status === 'confirmé').length,
-    escrowAmount: appointments.filter(a => a.payment_status === 'escrow' && a.status !== 'annulé' && a.status !== 'refusé').reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+
+    // ARGENT BLOQUÉ (SÉQUESTRE) : 
+    // On compte tout ce qui a le statut de paiement 'escrow' (ou 'payé') 
+    // ET qui n'est pas encore marqué comme 'terminé'
+    escrowAmount: appointments
+      .filter(a => 
+        (a.payment_status === 'escrow' || a.payment_status === 'payé') && 
+        a.status !== 'terminé' && 
+        a.status !== 'refusé' && 
+        a.status !== 'annulé'
+      )
+      .reduce((sum, a) => sum + Number(a.total_price || 0), 0),
   };
 
   const fetchData = useCallback(async () => {
@@ -155,6 +199,17 @@ export default function ProDashboard({ session, dark }) {
       ) : (
         <div className="max-w-[1600px] mx-auto space-y-10 animate-in fade-in duration-700">
           
+          {!profile?.stripe_onboarding_complete && (
+  <div className="bg-[#bc13fe] p-4 rounded-2xl mb-6 flex justify-between items-center animate-pulse">
+    <p className="text-[10px] font-black italic">⚠️ ACTION REQUISE : ACTIVEZ VOS PAIEMENTS POUR RECEVOIR VOS RÉMUNÉRATIONS</p>
+    <button 
+      onClick={handleConnectStripe}
+      className="bg-white text-black px-6 py-2 rounded-full text-[9px] font-black"
+    >
+      CONFIGURER MON RIB
+    </button>
+  </div>
+)}
           {/* HEADER BAR */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-6">
@@ -390,25 +445,35 @@ function MissionCard({ app, dark, glass, updateStatus, setActiveChat, fetchData 
     const [isVerifying, setIsVerifying] = useState(false);
     const [showCancelOptions, setShowCancelOptions] = useState(false);
 
-    const handleVerify = async () => {
-        if(vCode.toUpperCase() === (app.validation_code || '').toUpperCase()) {
-            setIsVerifying(true);
-            const { error } = await supabase.from('appointments').update({ 
-              status: 'terminé', 
-              payment_status: 'released',
-              payout_amount: app.total_price 
-            }).eq('id', app.id);
-            if (!error) { alert("PAIEMENT_LIBÉRÉ_COMMAND_CONFIRMED !"); fetchData(); }
-            setIsVerifying(false);
-        } else alert("CODE_INVALIDE_ACCÈS_REFUSÉ");
-    };
+const handleVerify = async (missionId) => {
+    if (!vCode) return alert("Veuillez entrer le code de sécurité.");
+    setIsVerifying(true);
 
-    const statusColors = {
-      'en attente': 'border-[#bc13fe] text-[#bc13fe]',
-      'confirmé': 'border-[#00f2ff] text-[#00f2ff]',
-      'terminé': 'border-green-500 text-green-500',
-      'refusé': 'border-red-500 text-red-500'
-    };
+    try {
+        const response = await fetch('http://localhost:3000/release-funds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                appointmentId: missionId, // On passe l'ID dynamique ici
+                validationCode: vCode
+            }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert("🚀 MISSION VALIDÉE : Fonds transférés !");
+            fetchData(); // Rafraîchir la liste des missions
+            setVCode(""); // Vider l'input
+        } else {
+            alert("⚠️ ÉCHEC : " + data.error);
+        }
+    } catch (err) {
+        alert("Erreur de connexion au serveur.");
+    } finally {
+        setIsVerifying(false);
+    }
+};
 
     return (
         <div className={`p-8 rounded-[40px] border ${glass} flex flex-col lg:flex-row justify-between items-center gap-6 transition-all hover:border-[#bc13fe]/30 text-left relative overflow-hidden`}>
@@ -451,8 +516,18 @@ function MissionCard({ app, dark, glass, updateStatus, setActiveChat, fetchData 
                           onChange={e => setVCode(e.target.value)} 
                           className="bg-transparent px-4 py-2 rounded-xl text-center font-mono text-xs outline-none w-24 text-[#00f2ff]" 
                         />
-                        <button onClick={handleVerify} disabled={isVerifying} className="px-4 py-2 bg-[#00f2ff] text-black rounded-xl text-[9px] font-black italic uppercase transition-all active:scale-95">LIBÉRER</button>
-                    </div>
+
+      {/* Si 'res' est ta variable de boucle dans bookings.map((res) => ...) */}
+      {/* LIGNE 477 ENVIRON */}
+      {/* DANS MissionCard, remplace TOUT le bouton de vérification */}
+      <button 
+        onClick={() => handleVerify(app.id)} // <--- ON UTILISE app.id ICI
+        disabled={isVerifying}
+        className="bg-[#00f2ff] text-black px-6 py-3 rounded-xl font-black italic uppercase transition-all active:scale-95 disabled:opacity-50"
+      >
+        {isVerifying ? 'VÉRIFICATION...' : 'VALIDER_MISSION'}
+      </button>
+               </div>
 
                     {!showCancelOptions ? (
                       <button onClick={() => setShowCancelOptions(true)} className="text-[8px] opacity-20 hover:opacity-100 text-red-500 font-black italic uppercase underline decoration-red-500 underline-offset-4 transition-all">
@@ -500,6 +575,7 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
     equipment: Array.isArray(profile?.equipment) ? profile.equipment : [],
     certifications: Array.isArray(profile?.certifications) ? profile.certifications : [],
     faq: Array.isArray(profile?.faq) ? profile.faq : [{ question: '', answer: '' }],
+  subscription_type: profile?.subscription_type || 'commission', // AJOUTE CETTE LIGNE
   });
 
   const addFaq = () => setFormData(prev => ({ ...prev, faq: [...prev.faq, { question: '', answer: '' }] }));
@@ -560,8 +636,7 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
     <div className={`p-6 md:p-12 rounded-[40px] md:rounded-[60px] border shadow-2xl ${dark ? 'bg-white/5 border-white/10' : 'bg-white border-black/5'} max-w-4xl mx-auto w-full`}>
       
       <div className="mb-8 md:mb-12 flex items-center overflow-x-auto no-scrollbar gap-6 border-b border-white/5 pb-4">
-        {["Identité", "Visuels", "PRÉSENTATION", "Services", "Planning", "FAQ"].map((n, i) => (
-          <button 
+{["Identité", "Visuels", "PRÉSENTATION", "Services", "Planning", "FAQ", "Monétisation"].map((n, i) => (          <button 
             key={i} 
             onClick={() => setStep(i + 1)}
             className={`text-[8px] font-black tracking-[0.2em] uppercase italic whitespace-nowrap transition-all ${step === i + 1 ? "text-[#bc13fe] scale-110" : "opacity-30"}`}
@@ -747,6 +822,41 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
         )}
       </div>
 
+      {/* Nouvelle Étape 7 : MONÉTISATION */}
+{step === 7 && (
+  <div className="animate-in slide-in-from-right-4 text-left">
+    <h2 className="text-2xl md:text-4xl mb-8 italic font-black uppercase tracking-tighter decoration-[#bc13fe] underline underline-offset-8">07_CHOIX_DU_FORFAIT</h2>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* OPTION COMMISSION */}
+      <button 
+        onClick={() => setFormData({...formData, subscription_type: 'commission'})}
+        className={`p-8 rounded-[40px] border-2 transition-all text-left ${formData.subscription_type === 'commission' ? 'border-[#bc13fe] bg-[#bc13fe]/5' : 'border-white/10 opacity-40'}`}
+      >
+        <div className="flex justify-between items-start mb-4">
+            <span className="text-3xl font-black italic text-[#bc13fe]">15%</span>
+            <i className={`fas ${formData.subscription_type === 'commission' ? 'fa-check-circle' : 'fa-circle'}`}></i>
+        </div>
+        <h3 className="text-xl font-black mb-2 uppercase italic">COMMISSION_SÉCURITÉ</h3>
+        <p className="text-[9px] opacity-60 leading-relaxed normal-case">Idéal pour débuter. Pas de frais fixes. Nous prenons une commission uniquement sur les réservations réussies.</p>
+      </button>
+
+      {/* OPTION ABONNEMENT */}
+      <button 
+        onClick={() => setFormData({...formData, subscription_type: 'monthly'})}
+        className={`p-8 rounded-[40px] border-2 transition-all text-left ${formData.subscription_type === 'monthly' ? 'border-[#00f2ff] bg-[#00f2ff]/5' : 'border-white/10 opacity-40'}`}
+      >
+        <div className="flex justify-between items-start mb-4">
+            <span className="text-3xl font-black italic text-[#00f2ff]">29€/m</span>
+            <i className={`fas ${formData.subscription_type === 'monthly' ? 'fa-check-circle' : 'fa-circle'}`}></i>
+        </div>
+        <h3 className="text-xl font-black mb-2 uppercase italic">PREMIUM_FIXE</h3>
+        <p className="text-[9px] opacity-60 leading-relaxed normal-case">Conservez 100% de vos gains. Un abonnement mensuel unique pour une visibilité maximale et zéro commission plateforme.</p>
+      </button>
+    </div>
+  </div>
+)}
+
 <div className="flex justify-between mt-12 pt-8 border-t border-white/5 font-black italic uppercase">
   {/* On a enlevé le 'invisible' : le bouton sera toujours là */}
   <button 
@@ -765,13 +875,13 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
     {step === 1 ? 'QUITTER' : 'RETOUR'} 
   </button>
 
-  <button 
-    onClick={() => step < 6 ? setStep(step + 1) : save()} 
-    disabled={loading} 
-    className="px-10 md:px-16 py-4 md:py-6 rounded-full bg-white text-black text-[10px] md:text-[12px] hover:bg-[#00f2ff] transition-all shadow-xl font-black active:scale-95"
-  >
-    {loading ? 'SYNCHRONISATION...' : step < 6 ? 'SUIVANT' : 'ENREGISTRER'}
-  </button>
+<button 
+  onClick={() => step < 7 ? setStep(step + 1) : save()} 
+  disabled={loading} 
+  className="px-10 md:px-16 py-4 md:py-6 rounded-full bg-white text-black text-[10px] md:text-[12px] hover:bg-[#00f2ff] transition-all shadow-xl font-black active:scale-95"
+>
+  {loading ? 'SYNCHRONISATION...' : step < 7 ? 'SUIVANT' : 'ENREGISTRER'}
+</button>
 </div>
     </div>
   );
