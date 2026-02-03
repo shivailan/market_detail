@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase';
 // --- LOGIQUE DE CALCUL DES REMBOURSEMENTS ---
 const calculateCancellationTerms = (appointmentDate, appointmentTime, price) => {
   const now = new Date();
-  // On crée une date robuste pour la comparaison
   const appointment = new Date(`${appointmentDate}T${appointmentTime}`);
   const diffInHours = (appointment - now) / (1000 * 60 * 60);
 
@@ -62,7 +61,6 @@ export default function MesReservations({ session, dark }) {
   const handleCancel = async (booking) => {
     if (!reason) return alert("Veuillez sélectionner une raison.");
     
-    // Calcul des montants selon les règles
     const terms = calculateCancellationTerms(booking.appointment_date, booking.appointment_time, booking.total_price);
     const refundAmount = (booking.total_price * terms.refund) / 100;
     const payoutAmount = (booking.total_price * terms.payoutPro) / 100;
@@ -92,21 +90,41 @@ export default function MesReservations({ session, dark }) {
     fetchBookingsByEmail();
   }, [fetchBookingsByEmail]);
 
+  // --- LOGIQUE D'ENVOI D'AVIS AVEC VERROUILLAGE ---
   const submitReview = async () => {
     if (!reviewData.comment.trim()) return alert("Veuillez écrire un commentaire.");
     setSubmittingReview(true);
-    const { error } = await supabase.from('reviews').insert([{
-      pro_id: reviewData.targetApt.pro_id,
-      client_name: session.user.email,
-      rating: reviewData.rating,
-      comment: reviewData.comment,
-      appointment_id: reviewData.targetApt.id
-    }]);
-    if (!error) {
+    
+    try {
+      // 1. On insère l'avis dans la table reviews
+      const { error: reviewError } = await supabase.from('reviews').insert([{
+        pro_id: reviewData.targetApt.pro_id,
+        client_name: session.user.email,
+        rating: reviewData.rating,
+        comment: reviewData.comment,
+        appointment_id: reviewData.targetApt.id
+      }]);
+
+      if (reviewError) throw reviewError;
+
+      // 2. On met à jour le rendez-vous pour dire qu'un avis a été laissé
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({ has_review: true })
+        .eq('id', reviewData.targetApt.id);
+
+      if (updateError) throw updateError;
+
+      // 3. Succès : on réinitialise et on rafraîchit la liste
+      alert("AVIS_PUBLIÉ : Merci pour votre retour !");
       setReviewData({ rating: 5, comment: '', targetApt: null });
       fetchBookingsByEmail();
+
+    } catch (err) {
+      alert("ERREUR_PUBLICATION : " + err.message);
+    } finally {
+      setSubmittingReview(false);
     }
-    setSubmittingReview(false);
   };
 
   const glass = dark ? 'bg-white/[0.02] border-white/10' : 'bg-black/[0.02] border-black/10';
@@ -209,7 +227,6 @@ export default function MesReservations({ session, dark }) {
                 <div className="border-t border-current/5 pt-6 mt-2">
                   {cancellingId === res.id ? (
                     <div className="flex flex-col gap-4 animate-in slide-in-from-bottom-2">
-                      {/* BANDEAU PRÉVENTIF */}
                       <div className={`p-4 rounded-2xl bg-white/5 border border-white/10 text-left`}>
                         {(() => {
                           const terms = calculateCancellationTerms(res.appointment_date, res.appointment_time, res.total_price);
@@ -262,28 +279,47 @@ export default function MesReservations({ session, dark }) {
                 </div>
               )}
 
-              {/* AVIS TECHNIQUE */}
+              {/* AVIS TECHNIQUE AVEC CONDITION DE VERROUILLAGE */}
               {res.payment_status === 'released' && (
                 <div className="p-6 md:p-8 rounded-[30px] border border-[#bc13fe]/20 bg-[#bc13fe]/5">
-                  <div className="flex flex-col gap-5">
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                      <p className="text-[10px] font-black tracking-[0.3em] text-[#bc13fe]">MISSION_TERMINÉE : NOTER L'UNITÉ</p>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button key={star} onClick={() => setReviewData({ ...reviewData, rating: star, targetApt: res })}>
-                            <i className={`fa-star text-lg ${reviewData.targetApt?.id === res.id && reviewData.rating >= star ? 'fas text-yellow-400' : 'far opacity-20'}`}></i>
-                          </button>
-                        ))}
+                  {res.has_review ? (
+                    // --- MESSAGE SI DÉJÀ NOTÉ ---
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 py-4 animate-in fade-in duration-700">
+                      <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]">
+                        <i className="fas fa-check"></i>
                       </div>
+                      <p className="text-[11px] font-black italic text-green-500 tracking-[0.2em] uppercase">
+                        Merci d'avoir laissé un avis sur cette prestation !
+                      </p>
                     </div>
-                    <textarea 
-                      placeholder="Commentaire sur la qualité du detailing..." 
-                      className={`w-full p-4 rounded-2xl border text-[10px] normal-case italic min-h-[80px] font-black ${dark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'}`}
-                      value={reviewData.targetApt?.id === res.id ? reviewData.comment : ''}
-                      onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value, targetApt: res })}
-                    />
-                    <button onClick={submitReview} className="w-full py-4 bg-[#bc13fe] text-white font-black text-[10px] tracking-widest rounded-full shadow-lg">PUBLIER_AVIS_TECHNIQUE</button>
-                  </div>
+                  ) : (
+                    // --- FORMULAIRE SI PAS ENCORE NOTÉ ---
+                    <div className="flex flex-col gap-5">
+                      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <p className="text-[10px] font-black tracking-[0.3em] text-[#bc13fe]">MISSION_TERMINÉE : NOTER L'UNITÉ</p>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button key={star} onClick={() => setReviewData({ ...reviewData, rating: star, targetApt: res })}>
+                              <i className={`fa-star text-lg ${reviewData.targetApt?.id === res.id && reviewData.rating >= star ? 'fas text-yellow-400' : 'far opacity-20'}`}></i>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea 
+                        placeholder="Commentaire sur la qualité du detailing..." 
+                        className={`w-full p-4 rounded-2xl border text-[10px] normal-case italic min-h-[80px] font-black ${dark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'}`}
+                        value={reviewData.targetApt?.id === res.id ? reviewData.comment : ''}
+                        onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value, targetApt: res })}
+                      />
+                      <button 
+                        onClick={submitReview} 
+                        disabled={submittingReview}
+                        className="w-full py-4 bg-[#bc13fe] text-white font-black text-[10px] tracking-widest rounded-full shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {submittingReview ? 'PUBLICATION...' : 'PUBLIER_AVIS_TECHNIQUE'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

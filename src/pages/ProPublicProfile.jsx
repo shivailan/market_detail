@@ -11,13 +11,18 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
   const [currentPage, setCurrentPage] = useState(0);
   const reviewsPerPage = 4;
   const [openIndex, setOpenIndex] = useState(null);
+  
+  // État local pour les rendez-vous afin de gérer le temps réel
+  const [localAppointments, setLocalAppointments] = useState(pro.appointments || []);
 
+  // --- EFFET SCROLL POUR LA NAV ---
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // --- RÉCUPÉRATION DES AVIS ---
   useEffect(() => {
     const fetchReviews = async () => {
       if (!supabase || !pro?.id) return;
@@ -30,6 +35,37 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
     };
     fetchReviews();
   }, [pro.id]);
+
+  // --- LOGIQUE TEMPS RÉEL (ANTI-DOUBLE RÉSERVATION) ---
+  useEffect(() => {
+    if (!pro?.id) return;
+
+    // Écouter les nouveaux rendez-vous pour ce pro spécifique
+    const channel = supabase
+      .channel(`realtime-bookings-${pro.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'appointments',
+          filter: `pro_id=eq.${pro.id}`
+        },
+        (payload) => {
+          console.log("Nouveau RDV détecté !", payload);
+          // On ajoute le nouveau RDV à notre liste locale pour griser le créneau immédiatement
+          setLocalAppointments(prev => [...prev, payload.new]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [pro.id]);
+
+  // On fusionne les data initiales et les data temps réel pour le modal
+  const proWithUpdatedBookings = { ...pro, appointments: localAppointments };
 
   const cover = pro.cover_url || "https://images.unsplash.com/photo-1601362840469-51e4d8d59085?q=80&w=2070";
   const catalog = pro.catalog_images || [];
@@ -194,7 +230,12 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
           <div className={`sticky top-32 p-10 rounded-[50px] border shadow-2xl ${dark ? 'bg-[#0a0a0a] border-white/10' : 'bg-white border-black/10'}`}>
             <h5 className="text-[11px] tracking-[0.4em] mb-10 border-b border-current/10 pb-6 italic font-black uppercase">RÉSERVATION_<span className="text-[#bc13fe]">UNIT</span></h5>
             <div className="space-y-4">
-                <button onClick={onBookingClick} className="w-full py-7 rounded-[25px] text-[12px] font-black tracking-[0.3em] bg-[#bc13fe] text-white shadow-lg active:scale-95 transition-all">INITIALISER_RDV</button>
+                <button 
+                  onClick={() => onBookingClick(proWithUpdatedBookings)} 
+                  className="w-full py-7 rounded-[25px] text-[12px] font-black tracking-[0.3em] bg-[#bc13fe] text-white shadow-lg active:scale-95 transition-all"
+                >
+                  INITIALISER_RDV
+                </button>
                 {session && (
                     <button onClick={() => setShowChat(true)} className="w-full py-7 rounded-[25px] text-[12px] font-black tracking-[0.3em] border-2 border-current transition-all flex items-center justify-center gap-3">
                         <i className="fas fa-comments"></i> MESSAGERIE
@@ -233,7 +274,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
         </section>
       )}
 
-      {/* 06. LOCALISATION (REMISE ET OPTIMISÉE) */}
+      {/* 06. LOCALISATION */}
       <section className="w-full px-4 md:px-20 pb-40 py-20">
         <div className="flex items-center gap-4 mb-12">
           <span className="text-[#00f2ff] font-mono text-sm">06//</span>
@@ -253,7 +294,7 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
             <h5 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none uppercase">ACCÈS_<span className="text-[#00f2ff]">STUDIO</span></h5>
             <p className="text-[16px] md:text-[18px] opacity-90 leading-relaxed italic normal-case font-medium">{pro.adresse}</p>
             <a 
-              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pro.adresse)}`} 
+              href={`https://maps.google.com/?q=${encodeURIComponent(pro.adresse)}`} 
               target="_blank" 
               rel="noreferrer"
               className="flex items-center justify-between p-6 md:p-8 rounded-[25px] bg-[#00f2ff] text-black hover:scale-[1.02] transition-all shadow-xl font-black italic text-[13px]"
@@ -272,7 +313,10 @@ export default function ProPublicProfile({ pro, session, onBookingClick, onClose
               <i className="fas fa-comments text-lg"></i>
             </button>
           )}
-          <button onClick={onBookingClick} className="flex-1 bg-[#bc13fe] text-white py-4 rounded-2xl font-black italic tracking-[0.2em] text-[13px] shadow-lg active:scale-95 transition-all">
+          <button 
+            onClick={() => onBookingClick(proWithUpdatedBookings)} 
+            className="flex-1 bg-[#bc13fe] text-white py-4 rounded-2xl font-black italic tracking-[0.2em] text-[13px] shadow-lg active:scale-95 transition-all"
+          >
             RÉSERVER MAINTENANT
           </button>
         </div>

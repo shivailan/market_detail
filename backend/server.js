@@ -25,34 +25,49 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
 
   const session = event.data.object;
 
-  // A. GESTION DES PAIEMENTS RÉUSSIS
-  if (event.type === 'checkout.session.completed') {
-    // CAS 1 : Mission Client
-    if (session.mode === 'payment') {
-      const secureCode = "DP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
-      const { error } = await supabase.from('appointments').insert([{
-        pro_id: session.metadata.pro_id,
-        client_name: session.metadata.client_email || session.customer_details?.email,
-        service_selected: session.metadata.service_name,
-        total_price: session.amount_total / 100,
-        appointment_date: session.metadata.date,
-        appointment_time: session.metadata.time,
-        validation_code: secureCode,
-        payment_status: 'escrow',
-        status: 'confirmé'
-      }]);
-      if (error) console.error("❌ Erreur Supabase Mission:", error.message);
-    }
+// A. GESTION DES PAIEMENTS RÉUSSIS
+if (event.type === 'checkout.session.completed') {
+  // CAS 1 : Mission Client
+  if (session.mode === 'payment') {
+    const meta = session.metadata; // On récupère les métadonnées envoyées par le BookingModal
+    const secureCode = "DP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    const { error } = await supabase.from('appointments').insert([{
+      pro_id: meta.pro_id,
+      client_name: meta.client_email || session.customer_details?.email,
+      service_selected: meta.service_name,
+      total_price: session.amount_total / 100,
+      appointment_date: meta.date,
+      appointment_time: meta.time,
+      validation_code: secureCode,
+      payment_status: 'escrow',
+      status: 'confirmé',
+      
+      // --- NOUVELLES COLONNES DE DIAGNOSTIC ---
+      intervention_type: meta.intervention_type, 
+      intervention_address: meta.intervention_address,
+      has_power: meta.has_power,
+      vehicle_type: meta.vehicle_type,
+      technical_details: meta.technical_details,
+      major_dirt_detail: meta.major_dirt
+    }]);
 
-    // CAS 2 : Abonnement Pro
-    if (session.mode === 'subscription') {
-      const userId = session.metadata.userId;
-      await supabase.from('profiles_pro')
-        .update({ subscription_status: 'active', subscription_type: 'monthly' })
-        .eq('id', userId);
-      console.log("✅ Abonnement activé");
+    if (error) {
+      console.error("❌ Erreur Supabase Mission:", error.message);
+    } else {
+      console.log("✅ Mission enregistrée avec diagnostic complet !");
     }
   }
+
+  // CAS 2 : Abonnement Pro (Reste inchangé)
+  if (session.mode === 'subscription') {
+    const userId = session.metadata.userId;
+    await supabase.from('profiles_pro')
+      .update({ subscription_status: 'active', subscription_type: 'monthly' })
+      .eq('id', userId);
+    console.log("✅ Abonnement activé");
+  }
+}
 
   // B. GESTION DE L'ONBOARDING CONNECT
   if (event.type === 'account.updated') {

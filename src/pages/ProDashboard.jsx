@@ -1,20 +1,25 @@
 import {
   addDays,
+  addMonths,
   addWeeks,
+  addYears,
   format,
+  getDaysInMonth,
   isSameDay,
+  startOfMonth,
   startOfWeek,
-  subWeeks
+  startOfYear,
+  subMonths,
+  subWeeks,
+  subYears,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useCallback, useEffect, useState } from 'react';
 import ChatBox from '../components/ChatBox';
+import MessagingCenter from '../components/MessagingCenter';
 import { supabase } from '../lib/supabase';
 import { uploadImage } from '../utils/storage';
 
-// ... tes imports (supabase, date-fns, etc.)
-
-// DEPLACE LE BLOC ICI (LIGNE 16 ENVIRON)
 const statusColors = {
   'en attente': 'border-[#bc13fe] text-[#bc13fe]',
   'confirmé': 'border-[#00f2ff] text-[#00f2ff]',
@@ -24,17 +29,18 @@ const statusColors = {
 };
 
 export default function ProDashboard({ session, dark }) {
-  // --- ÉTATS ---
-  const [profile, setProfile] = useState(null);
+    const [profile, setProfile] = useState(null);
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [appointments, setAppointments] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); 
   const [statusFilter, setStatusFilter] = useState('tous');
-  const [viewMode, setViewMode] = useState('workWeek'); 
+  const [statsView, setStatsView] = useState('week'); 
   const [currentDate, setCurrentDate] = useState(new Date());
-
+  const [conversations, setConversations] = useState([]);
+  const [viewMode, setViewMode] = useState('workWeek'); // 'workWeek' ou 'day'
+  const hours = Array.from({ length: 24 }, (_, i) => (i).toString().padStart(2, '0') + ':00');
 
   const profileUrl = `${window.location.origin}/pro/${profile?.slug}`;
 
@@ -43,87 +49,68 @@ export default function ProDashboard({ session, dark }) {
     alert("Lien copié ! Collez-le sur votre fiche Google Maps.");
   };
 
-  // Dans ton composant ProDashboard
-const handleGoToStripe = async () => {
-  // 1. On vérifie si on a le profil (remplace 'profile' par le nom de ta variable d'état)
-  if (!profile?.stripe_connect_id) {
-    alert("Votre compte Stripe n'est pas encore configuré.");
-    return;
-  }
-
-  try {
-    const response = await fetch('http://localhost:3000/create-portal-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stripeConnectId: profile.stripe_connect_id }), // Utilise le bon nom ici
-    });
-    
-    const data = await response.json();
-    
-    if (data.url) {
-      window.open(data.url, '_blank'); // Ouvre le dashboard Stripe Express
-    } else {
-      console.error("Erreur:", data.error);
+  const handleGoToStripe = async () => {
+    if (!profile?.stripe_connect_id) {
+      alert("Votre compte Stripe n'est pas encore configuré.");
+      return;
     }
-  } catch (err) {
-    console.error("Erreur lors de la création du lien Stripe:", err);
-  }
-};
-
-  // --- ÉTATS MESSAGERIE ---
-  const [conversations, setConversations] = useState([]);
-
-  const hours = Array.from({ length: 15 }, (_, i) => (i + 7).toString().padStart(2, '0') + ':00');
-
-  // --- LOGIQUE DE CALCUL DE L'ACTIVITÉ RÉELLE ---
-const getActivityData = () => {
-  // On récupère le lundi de la semaine sélectionnée (currentDate)
-  const startOfSelectedWeek = startOfWeek(currentDate, { weekStartsOn: 1 });
-  
-  // On génère les 7 jours de cette semaine précise
-  const daysOfSelectedWeek = Array.from({ length: 7 }, (_, i) => {
-    return format(addDays(startOfSelectedWeek, i), 'yyyy-MM-dd');
-  });
-
-  return daysOfSelectedWeek.map(dateStr => {
-    const dailyTotal = appointments
-      .filter(a => {
-        const apptDate = a.appointment_date?.split('T')[0]; 
-        return apptDate === dateStr && (a.status === 'terminé' || a.status === 'confirmé');
-      })
-      .reduce((sum, a) => {
-        const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
-        return sum + (Number(a.total_price || 0) * multiplier);
-      }, 0);
-    
-    const height = dailyTotal > 0 ? Math.max((dailyTotal / 500) * 100, 15) : 0;
-
-    return {
-      label: format(new Date(dateStr), 'EEE', { locale: fr }),
-      value: dailyTotal.toFixed(0),
-      height: height
-    };
-  });
-};
+    try {
+      const response = await fetch('http://localhost:3000/create-portal-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stripeConnectId: profile.stripe_connect_id }),
+      });
+      const data = await response.json();
+      if (data.url) window.open(data.url, '_blank');
+    } catch (err) { console.error("Erreur Stripe Portal:", err); }
+  };
 
   const handleConnectStripe = async () => {
-  const response = await fetch('http://localhost:3000/create-connect-account', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      userId: session.user.id, 
-      email: session.user.email 
-    }),
-  });
-  const data = await response.json();
-  if (data.url) window.location.href = data.url; // Redirige vers l'onboarding Stripe
-};
+    const response = await fetch('http://localhost:3000/create-connect-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: session.user.id, email: session.user.email }),
+    });
+    const data = await response.json();
+    if (data.url) window.location.href = data.url;
+  };
+
+  const getActivityData = () => {
+    let days = [];
+    let formatLabel = 'EEE';
+    if (statsView === 'week') {
+      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      days = Array.from({ length: 7 }, (_, i) => format(addDays(start, i), 'yyyy-MM-dd'));
+    } else if (statsView === 'month') {
+      const start = startOfMonth(currentDate);
+      days = Array.from({ length: getDaysInMonth(currentDate) }, (_, i) => format(addDays(start, i), 'yyyy-MM-dd'));
+      formatLabel = 'dd';
+    } else {
+      const start = startOfYear(currentDate);
+      days = Array.from({ length: 12 }, (_, i) => format(addMonths(start, i), 'yyyy-MM'));
+      formatLabel = 'MMM';
+    }
+
+    return days.map(dateStr => {
+      const dailyTotal = appointments
+        .filter(a => {
+          const apptDate = a.appointment_date?.split('T')[0];
+          return statsView === 'year' ? apptDate?.startsWith(dateStr) : apptDate === dateStr;
+        })
+        .reduce((sum, a) => {
+          const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
+          return sum + (Number(a.total_price || 0) * multiplier);
+        }, 0);
+      const limit = statsView === 'year' ? 5000 : (statsView === 'month' ? 1500 : 500);
+      const height = dailyTotal > 0 ? Math.max((dailyTotal / limit) * 100, 10) : 0;
+      return { label: format(new Date(dateStr), formatLabel, { locale: fr }), value: dailyTotal.toFixed(0), height };
+    });
+  };
 
   const activityData = getActivityData();
 
   const fetchConversations = useCallback(async () => {
     if (!session?.user?.id) return;
-
     const { data, error } = await supabase
       .from('messages')
       .select('sender_id, receiver_id, sender_name, receiver_name, content, created_at')
@@ -133,96 +120,40 @@ const getActivityData = () => {
     if (!error && data) {
       const contactMap = new Map();
       const uniqueContacts = [];
-
       data.forEach(msg => {
-        const isIwasSender = msg.sender_id === session.user.id;
-        const contactId = isIwasSender ? msg.receiver_id : msg.sender_id;
-        const contactName = isIwasSender ? msg.receiver_name : msg.sender_name;
-        
+        const contactId = msg.sender_id === session.user.id ? msg.receiver_id : msg.sender_id;
+        const contactName = msg.sender_id === session.user.id ? msg.receiver_name : msg.sender_name;
         if (contactId && !contactMap.has(contactId)) {
           contactMap.set(contactId, true);
-          uniqueContacts.push({
-            id: contactId,
-            name: (contactName || "CLIENT_UNIT").toUpperCase(),
-            lastMsg: msg.content,
-            time: msg.created_at
-          });
+          uniqueContacts.push({ id: contactId, name: (contactName || "CLIENT_UNIT").toUpperCase(), lastMsg: msg.content, time: msg.created_at });
         }
       });
       setConversations(uniqueContacts);
     }
   }, [session?.user?.id]);
 
-  // --- STATISTIQUES ---
-// --- STATISTIQUES MISES À JOUR ---
-  // --- STATISTIQUES MISES À JOUR AVEC LOGIQUE DE COMMISSION ---
-const stats = {
-  // ARGENT RÉEL REÇU (Missions terminées)
-  totalRevenue: appointments
-    .filter(a => a.status === 'terminé')
-    .reduce((sum, a) => {
-      // Si commission : le pro voit 85% | Si monthly : le pro voit 100%
-      const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
-      return sum + (Number(a.total_price || 0) * multiplier);
-    }, 0).toFixed(2),
-
-  pendingMissions: appointments.filter(a => a.status === 'en attente').length,
-  activeMissions: appointments.filter(a => a.status === 'confirmé').length,
-
-  // ARGENT BLOQUÉ (SÉQUESTRE)
-  escrowAmount: appointments
-    .filter(a => 
-      (a.payment_status === 'escrow' || a.payment_status === 'payé') && 
-      a.status !== 'terminé' && a.status !== 'refusé' && a.status !== 'annulé'
-    )
-    .reduce((sum, a) => {
-      // Ici aussi, on affiche au pro ce qu'il va RÉELLEMENT toucher après commission
-      const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
-      return sum + (Number(a.total_price || 0) * multiplier);
-    }, 0).toFixed(2),
-};
+  const stats = {
+    totalRevenue: appointments.filter(a => a.status === 'terminé').reduce((sum, a) => sum + (Number(a.total_price || 0) * (profile?.subscription_type === 'monthly' ? 1 : 0.85)), 0).toFixed(2),
+    pendingMissions: appointments.filter(a => a.status === 'en attente').length,
+    activeMissions: appointments.filter(a => a.status === 'confirmé').length,
+    escrowAmount: appointments.filter(a => (a.payment_status === 'escrow' || a.payment_status === 'payé') && a.status !== 'terminé').reduce((sum, a) => sum + (Number(a.total_price || 0) * (profile?.subscription_type === 'monthly' ? 1 : 0.85)), 0).toFixed(2),
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data: prof } = await supabase.from('profiles_pro').select('*').eq('id', session.user.id).maybeSingle();
-    if (prof) setProfile(prof);
-    else setIsConfiguring(true);
-
+    if (prof) setProfile(prof); else setIsConfiguring(true);
     const { data: apps } = await supabase.from('appointments').select('*').eq('pro_id', session.user.id).order('appointment_date', { ascending: false });
     setAppointments(apps || []);
-    
     await fetchConversations();
     setLoading(false);
   }, [session.user.id, fetchConversations]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const updateStatus = async (appId, newStatus, reason = "") => {
-    setLoading(true);
-    
-    if (newStatus === 'refusé' || newStatus === 'annulé') {
-      const confirm = window.confirm("ATTENTION : L'annulation d'une mission impacte votre score de fiabilité. Confirmer ?");
-      if (!confirm) {
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await supabase.from('appointments').update({ 
-        status: 'refusé',
-        cancellation_reason: `ANNULÉ_PAR_PRO : ${reason || 'Imprévu technique'}`,
-        refund_amount: appointments.find(a => a.id === appId).total_price,
-        payout_amount: 0,
-        cancelled_at: new Date().toISOString()
-      }).eq('id', appId);
-
-      if (error) alert(error.message);
-    } else {
-      const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', appId);
-      if (error) alert(error.message);
-    }
-    
-    fetchData();
-    setLoading(false);
+  const updateStatus = async (appId, newStatus) => {
+    const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', appId);
+    if (!error) fetchData();
   };
 
   const glass = dark ? 'bg-white/[0.03] border-white/10' : 'bg-black/[0.03] border-black/10';
@@ -237,214 +168,192 @@ const stats = {
       ) : (
         <div className="max-w-[1600px] mx-auto space-y-10 animate-in fade-in duration-700">
           
+          {/* BANDEAU STRIPE ALERTE */}
           {!profile?.stripe_onboarding_complete && (
-  <div className="bg-[#bc13fe] p-4 rounded-2xl mb-6 flex justify-between items-center animate-pulse">
-    <p className="text-[10px] font-black italic">⚠️ ACTION REQUISE : ACTIVEZ VOS PAIEMENTS POUR RECEVOIR VOS RÉMUNÉRATIONS</p>
-    <button 
-      onClick={handleConnectStripe}
-      className="bg-white text-black px-6 py-2 rounded-full text-[9px] font-black"
-    >
-      CONFIGURER MON RIB
-    </button>
-  </div>
-)}
+            <div className="bg-[#bc13fe] p-4 rounded-2xl mb-6 flex justify-between items-center animate-pulse">
+              <p className="text-[10px] font-black italic">⚠️ ACTION REQUISE : ACTIVEZ VOS PAIEMENTS POUR RECEVOIR VOS RÉMUNÉRATIONS</p>
+              <button onClick={handleConnectStripe} className="bg-white text-black px-6 py-2 rounded-full text-[9px] font-black">CONFIGURER MON RIB</button>
+            </div>
+          )}
 
-<button onClick={handleGoToStripe} className="bg-blue-600 text-white p-3 rounded">
-  Voir mes virements et mon RIB sur Stripe
-</button>
-          {/* HEADER BAR */}
+          {/* HEADER & DASHBOARD BUTTON */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-6">
               <div className="w-16 h-16 rounded-[25px] overflow-hidden border-2 border-[#bc13fe]">
-                <img src={profile?.cover_url || "https://via.placeholder.com/150"} className="w-full h-full object-cover" />
+                <img src={profile?.cover_url || "https://via.placeholder.com/150"} className="w-full h-full object-cover" alt="Pro" />
               </div>
               <div>
-                <h1 className="text-3xl md:text-5xl tracking-tighter leading-none italic font-black">{profile?.nom_commercial || "MON_STUDIO"}</h1>
+                <h1 className="text-3xl md:text-5xl tracking-tighter leading-none italic font-black uppercase">{profile?.nom_commercial || "MON_STUDIO"}</h1>
                 <p className="text-[10px] text-[#bc13fe] tracking-[0.3em] mt-2 italic font-black">Status: OPÉRATIONNEL</p>
               </div>
             </div>
 
-            <div className={`flex p-1 rounded-2xl border ${glass} backdrop-blur-xl`}>
-              {['overview', 'agenda', 'missions'].map((tab) => (
-                <button 
-                  key={tab} 
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-3 rounded-xl text-[9px] tracking-widest transition-all italic font-black ${activeTab === tab ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40 hover:opacity-100'}`}
-                >
-                  {tab.toUpperCase()}
-                </button>
-              ))}
-              <button onClick={() => setIsConfiguring(true)} className="px-6 py-3 text-[9px] opacity-40 hover:opacity-100 transition-all"><i className="fas fa-cog"></i></button>
+            <div className="flex gap-4 items-center">
+              {/* BOUTON STRIPE EXPRESS */}
+              <button onClick={handleGoToStripe} className="px-6 py-3 bg-blue-600 text-white rounded-xl text-[9px] font-black tracking-widest hover:bg-blue-700 transition-all shadow-lg">
+                DASHBOARD_STRIPE <i className="fas fa-external-link-alt ml-2"></i>
+              </button>
+
+              <div className={`flex p-1 rounded-2xl border ${glass} backdrop-blur-xl`}>
+                {['overview', 'agenda', 'missions', 'messages'].map((tab) => (
+                  <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 rounded-xl text-[9px] tracking-widest transition-all italic font-black ${activeTab === tab ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40 hover:opacity-100'}`}>
+                    {tab.toUpperCase()}
+                  </button>
+                ))}
+                <button onClick={() => setIsConfiguring(true)} className="px-6 py-3 text-[9px] opacity-40 hover:opacity-100 transition-all"><i className="fas fa-cog"></i></button>
+              </div>
             </div>
           </div>
 
-          {/* PUBLIC URL BAR */}
+          {/* PUBLIC URL BAR (REMise) */}
           <div className={`p-6 rounded-[30px] border ${glass} border-[#bc13fe]/30 bg-[#bc13fe]/5 mb-8`}>
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
               <div className="text-left">
-                <p className="text-[10px] font-black tracking-widest text-[#bc13fe] mb-1">VOTRE_VITRINE_PUBLIQUE</p>
-                <p className="text-xs font-mono opacity-60 truncate max-w-[300px] md:max-w-none">{profileUrl}</p>
+                <p className="text-[10px] font-black tracking-widest text-[#bc13fe] mb-1 uppercase">VOTRE_VITRINE_PUBLIQUE (Google Maps)</p>
+                <p className="text-xs font-mono opacity-60 truncate max-w-[300px] md:max-w-none lowercase italic">{profileUrl}</p>
               </div>
               <div className="flex gap-2 w-full md:w-auto">
-                <button 
-                  onClick={copyToClipboard}
-                  className="flex-1 md:flex-none px-6 py-3 bg-[#bc13fe] text-white rounded-xl text-[10px] font-black italic transition-all active:scale-95"
-                >
-                  COPIER_LE_LIEN
-                </button>
-                <a 
-                  href={profileUrl} 
-                  target="_blank" 
-                  className="flex-1 md:flex-none px-6 py-3 border border-[#bc13fe] text-[#bc13fe] rounded-xl text-[10px] font-black italic text-center hover:bg-[#bc13fe] hover:text-white transition-all"
-                >
-                  VOIR_MA_PAGE
-                </a>
+                <button onClick={copyToClipboard} className="flex-1 md:flex-none px-6 py-3 bg-[#bc13fe] text-white rounded-xl text-[10px] font-black italic transition-all active:scale-95 uppercase">COPIER_LE_LIEN</button>
+                <a href={profileUrl} target="_blank" className="flex-1 md:flex-none px-6 py-3 border border-[#bc13fe] text-[#bc13fe] rounded-xl text-[10px] font-black italic text-center hover:bg-[#bc13fe] hover:text-white transition-all uppercase">VOIR_MA_PAGE</a>
               </div>
             </div>
           </div>
 
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-6">
-              <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <StatCard title="CA Terminés" value={`${stats.totalRevenue}€`} icon="fa-wallet" color="#00f2ff" glass={glass} />
-                <StatCard title="En Séquestre" value={`${stats.escrowAmount}€`} icon="fa-lock" color="#bc13fe" glass={glass} />
-                <StatCard title="Missions Actives" value={stats.activeMissions} icon="fa-car" color="#fff" glass={glass} />
-                
-<div className={`col-span-1 sm:col-span-3 p-8 rounded-[40px] border ${glass} min-h-[300px] flex flex-col justify-between`}>
-  <div className="flex justify-between items-center">
-    <div>
-      <p className="text-[10px] tracking-widest opacity-50 font-black">PERFORMANCE_WEEK</p>
-      <h4 className="text-[8px] font-black text-[#00f2ff] mt-1">REVENUS_DÉTAILLÉS_NETS</h4>
-    </div>
+              <div className="lg:col-span-8 space-y-8">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <StatCard title="CA NETS TERMINÉS" value={`${stats.totalRevenue}€`} icon="fa-wallet" color="#00f2ff" glass={glass} />
+                  <StatCard title="FONDS EN SÉQUESTRE" value={`${stats.escrowAmount}€`} icon="fa-lock" color="#bc13fe" glass={glass} />
+                  <StatCard title="MISSIONS ACTIVES" value={stats.activeMissions} icon="fa-car" color="#fff" glass={glass} />
+                </div>
 
-    {/* NAVIGATION SEMAINE */}
-  <div className="flex gap-2">
-    <button 
-      onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
-      className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all text-[10px]"
-    >
-      <i className="fas fa-chevron-left"></i>
-    </button>
-    <button 
-      onClick={() => setCurrentDate(new Date())} // Bouton "Aujourd'hui"
-      className="px-3 rounded-full border border-white/10 text-[7px] font-black hover:bg-white hover:text-black transition-all"
-    >
-      NOW
-    </button>
-    <button 
-      onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
-      className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all text-[10px]"
-    >
-      <i className="fas fa-chevron-right"></i>
-    </button>
-  </div>
-  
-    <div className="text-right">
-      <span className="text-[12px] font-black text-[#bc13fe]">
-        {activityData.reduce((sum, d) => sum + Number(d.value), 0)}€
-      </span>
-    </div>
-  </div>
+                {/* GRAPH SECTION */}
+                <div className={`p-8 rounded-[40px] border ${glass} min-h-[400px] flex flex-col justify-between`}>
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-[10px] tracking-widest opacity-50 font-black">PERFORMANCE</p>
+                        <div className="flex bg-white/5 p-1 rounded-lg border border-white/10">
+                          {['week', 'month', 'year'].map((v) => (
+                            <button key={v} onClick={() => setStatsView(v)} className={`px-3 py-1 text-[7px] font-black rounded-md transition-all ${statsView === v ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>{v.toUpperCase()}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <h4 className="text-[10px] font-black text-[#00f2ff] mt-2 italic uppercase">
+                        {statsView === 'week' && `DU ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd')} AU ${format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), 'dd MMMM yyyy', { locale: fr })}`}
+                        {statsView === 'month' && format(currentDate, 'MMMM yyyy', { locale: fr })}
+                        {statsView === 'year' && `ANNÉE ${format(currentDate, 'yyyy')}`}
+                      </h4>
+                    </div>
 
-<div className="flex items-end justify-between h-48 gap-3 mt-6 border-b border-white/10 pb-2">
-  {activityData.map((day, i) => (
-    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group">
-      
-      {/* Tooltip (Montant au survol) */}
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-[#bc13fe] text-white text-[8px] py-1 px-2 rounded-md mb-2 font-black shadow-xl whitespace-nowrap">
-        {day.value} €
-      </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-[7px] opacity-40 font-black">TOTAL_NET</p>
+                        <p className="text-sm font-black text-[#bc13fe]">
+                          {activityData.reduce((sum, d) => sum + Number(d.value), 0).toLocaleString()}€
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { if(statsView === 'week') setCurrentDate(subWeeks(currentDate, 1)); else if(statsView === 'month') setCurrentDate(subMonths(currentDate, 1)); else setCurrentDate(subYears(currentDate, 1)); }} className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all text-[10px]"><i className="fas fa-chevron-left"></i></button>
+                        <button onClick={() => setCurrentDate(new Date())} className="px-3 rounded-full border border-white/10 text-[7px] font-black hover:bg-white hover:text-black transition-all">NOW</button>
+                        <button onClick={() => { if(statsView === 'week') setCurrentDate(addWeeks(currentDate, 1)); else if(statsView === 'month') setCurrentDate(addMonths(currentDate, 1)); else setCurrentDate(addYears(currentDate, 1)); }} className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all text-[10px]"><i className="fas fa-chevron-right"></i></button>
+                      </div>
+                    </div>
+                  </div>
 
-      {/* LA BARRE : On force l'affichage avec des couleurs pleines si le dégradé bug */}
-      <div 
-        style={{ 
-          height: `${day.height}%`, 
-          minHeight: Number(day.value) > 0 ? '4px' : '0px' 
-        }} 
-        className={`w-full max-w-[35px] rounded-t-lg transition-all duration-700 shadow-[0_0_15px_rgba(188,19,254,0.3)] ${
-          Number(day.value) > 0 
-          ? 'bg-[#bc13fe] bg-gradient-to-t from-[#bc13fe] to-[#00f2ff]' 
-          : 'bg-white/5'
-        }`}
-      />
-      
-      <span className="text-[8px] font-black opacity-30 mt-3">{day.label.toUpperCase()}</span>
-    </div>
-  ))}
-</div>
-</div>
-</div>
+                  <div className="flex items-end justify-between h-48 gap-1 md:gap-3 mt-8 border-b border-white/10 pb-2 overflow-x-auto no-scrollbar">
+                    {activityData.map((day, i) => (
+                      <div key={i} className="flex-1 min-w-[15px] flex flex-col items-center justify-end h-full group">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-[#bc13fe] text-white text-[7px] py-1 px-2 rounded-md mb-2 font-black shadow-xl whitespace-nowrap z-10">{day.value} €</div>
+                        <div style={{ height: `${day.height}%`, minHeight: Number(day.value) > 0 ? '4px' : '0px' }} className={`w-full max-w-[30px] rounded-t-lg transition-all duration-700 shadow-[0_0_15px_rgba(188,19,254,0.3)] ${Number(day.value) > 0 ? 'bg-[#bc13fe] bg-gradient-to-t from-[#bc13fe] to-[#00f2ff]' : 'bg-white/5'}`} />
+                        <span className={`font-black opacity-30 mt-3 ${statsView === 'month' ? 'text-[5px]' : 'text-[8px]'}`}>{day.label.toUpperCase()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
               {/* SIDEBAR OVERVIEW */}
               <div className="lg:col-span-4 space-y-6">
                 <div className={`p-8 rounded-[40px] border ${glass} border-[#00f2ff]/20 bg-[#00f2ff]/5`}>
-                  <h3 className="text-sm mb-6 flex items-center gap-3 font-black italic"><i className="fas fa-bolt text-[#00f2ff]"></i> ACTIONS_REQUISES</h3>
+                  <h3 className="text-sm mb-6 flex items-center gap-3 font-black italic uppercase"><i className="fas fa-bolt text-[#00f2ff]"></i> ACTIONS_REQUISES</h3>
                   {appointments.filter(a => a.status === 'en attente').map(a => (
                     <div key={a.id} className="flex justify-between items-center bg-black/20 p-4 rounded-2xl mb-2 border border-white/5 transition-all hover:bg-black/40">
-                      <p className="text-[9px] font-black italic">{a.client_name?.split('@')[0].toUpperCase() || "UNIT_ID"}</p>
+                      <p className="text-[9px] font-black italic uppercase">{a.client_name?.split('@')[0]}</p>
                       <button onClick={() => setActiveTab('missions')} className="text-[8px] text-[#00f2ff] underline font-black">VOIR</button>
                     </div>
                   ))}
                 </div>
 
                 <div className={`p-8 rounded-[40px] border ${glass}`}>
-                  <h3 className="text-sm mb-6 flex items-center gap-3 font-black italic"><i className="fas fa-comments text-[#bc13fe]"></i> DERNIERS_CHATS</h3>
+                  <h3 className="text-sm mb-6 flex items-center gap-3 font-black italic uppercase"><i className="fas fa-comments text-[#bc13fe]"></i> DERNIERS_CHATS</h3>
                   <div className="space-y-4">
-                    {conversations.length > 0 ? conversations.map(conv => (
-                      <button 
-                        key={conv.id} 
-                        onClick={() => setActiveChat({id: conv.id, name: conv.name})}
-                        className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-left"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-[#bc13fe]/20 flex items-center justify-center text-[10px] font-black text-[#bc13fe] border border-[#bc13fe]/20">
-                          {conv.name[0]}
-                        </div>
+                    {conversations.slice(0, 4).map(conv => (
+                      <button key={conv.id} onClick={() => setActiveTab('messages')} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-left">
+                        <div className="w-10 h-10 rounded-full bg-[#bc13fe]/20 flex items-center justify-center text-[10px] font-black text-[#bc13fe]">{conv.name[0]}</div>
                         <div className="flex-1 min-w-0">
-                           <div className="flex justify-between items-center">
-                              <p className="text-[10px] font-black truncate italic">{conv.name}</p>
-                              <span className="text-[6px] opacity-30 font-black italic">{format(new Date(conv.time), 'HH:mm')}</span>
-                           </div>
+                           <div className="flex justify-between items-center"><p className="text-[10px] font-black truncate uppercase">{conv.name}</p><span className="text-[6px] opacity-30">{format(new Date(conv.time), 'HH:mm')}</span></div>
                            <p className="text-[8px] opacity-50 truncate normal-case italic mt-1">{conv.lastMsg}</p>
                         </div>
                       </button>
-                    )) : (
-                      <p className="text-[8px] opacity-30 text-center py-10 italic uppercase font-black">Aucun message reçu</p>
-                    )}
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'agenda' && (
-            <div className="animate-in fade-in zoom-in-95 duration-500">
-               <div className={`p-6 rounded-[50px] border ${glass} backdrop-blur-3xl overflow-hidden`}>
-                  <div className="flex justify-between items-center mb-8">
-                    <div className="flex gap-4">
-                       <button onClick={() => setCurrentDate(subWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all">←</button>
-                       <button onClick={() => setCurrentDate(addWeeks(currentDate, 1))} className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all">→</button>
-                    </div>
-                    <p className="text-xl font-black italic uppercase">{format(currentDate, 'MMMM yyyy', { locale: fr })}</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <AgendaTable displayedDays={getDisplayedDays(currentDate, viewMode)} hours={hours} appointments={appointments} dark={dark} glass={glass} setActiveChat={setActiveChat} />
-                  </div>
-               </div>
+          {activeTab === 'messages' && (
+            <div className="animate-in fade-in slide-in-from-bottom-6 duration-500">
+               <MessagingCenter session={session} dark={dark} />
             </div>
           )}
 
+{activeTab === 'agenda' && (
+  <div className={`p-8 rounded-[50px] border ${glass} backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-500`}>
+    <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+      <div className="flex items-center gap-4">
+        {/* SWITCH VUE JOUR/SEMAINE */}
+        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 mr-2">
+          <button onClick={() => setViewMode('day')} className={`px-4 py-2 rounded-lg text-[8px] font-black transition-all ${viewMode === 'day' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>JOUR</button>
+          <button onClick={() => setViewMode('workWeek')} className={`px-4 py-2 rounded-lg text-[8px] font-black transition-all ${viewMode === 'workWeek' ? 'bg-[#bc13fe] text-white shadow-lg' : 'opacity-40'}`}>SEMAINE</button>
+        </div>
+        
+        {/* NAVIGATION DATE */}
+        <div className="flex gap-2">
+          <button onClick={() => setCurrentDate(subWeeks(currentDate, 1))} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all text-xs">←</button>
+          <button onClick={() => setCurrentDate(new Date())} className="px-4 h-10 rounded-full border border-white/10 text-[8px] font-black hover:bg-white hover:text-black transition-all uppercase">Aujourd'hui</button>
+          <button onClick={() => setCurrentDate(addWeeks(currentDate, 1))} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] transition-all text-xs">→</button>
+        </div>
+      </div>
+      <p className="text-xl font-black italic uppercase tracking-tighter text-[#bc13fe]">{format(currentDate, 'MMMM yyyy', { locale: fr })}</p>
+    </div>
+
+    <div className="overflow-x-auto custom-scrollbar">
+      {/* C'EST ICI QUE hours DOIT ÊTRE PASSÉ */}
+      <AgendaTable 
+        displayedDays={getDisplayedDays(currentDate, viewMode)} 
+        hours={hours} 
+        appointments={appointments} 
+        dark={dark} 
+        glass={glass} 
+        setActiveChat={setActiveChat} 
+        viewMode={viewMode}
+      />
+    </div>
+  </div>
+)}
           {activeTab === 'missions' && (
             <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4">
                   {['tous', 'en attente', 'confirmé', 'terminé', 'refusé'].map(f => (
-                    <button key={f} onClick={() => setStatusFilter(f)} className={`px-8 py-3 rounded-full text-[9px] border transition-all font-black italic uppercase ${statusFilter === f ? 'bg-white text-black' : 'border-white/10 opacity-40 hover:opacity-100'}`}>
-                      {f}
-                    </button>
+                    <button key={f} onClick={() => setStatusFilter(f)} className={`px-8 py-3 rounded-full text-[9px] border transition-all font-black italic uppercase ${statusFilter === f ? 'bg-white text-black' : 'border-white/10 opacity-40 hover:opacity-100'}`}>{f}</button>
                   ))}
                </div>
                <div className="grid grid-cols-1 gap-6">
                   {appointments.filter(a => statusFilter === 'tous' || a.status === statusFilter).map(app => (
-                    <MissionCard key={app.id} app={app} dark={dark} glass={glass} updateStatus={updateStatus} setActiveChat={setActiveChat} fetchData={fetchData} />
+                    <MissionCard key={app.id} app={app} dark={dark} glass={glass} updateStatus={updateStatus} setActiveTab={setActiveTab} fetchData={fetchData} />
                   ))}
                </div>
             </div>
@@ -452,6 +361,7 @@ const stats = {
         </div>
       )}
 
+      {/* CHATBOX FALLBACK (Pop-up) */}
       {activeChat && (
         <div className="fixed inset-0 z-[2500] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
            <div className="relative w-full max-w-lg h-[600px] shadow-2xl animate-in zoom-in-95 duration-300">
@@ -462,6 +372,11 @@ const stats = {
     </div>
   );
 }
+
+
+
+// ... SOUS-COMPOSANTS (StatCard, AgendaTable, MissionCard, etc.) ...
+// Garde les sous-composants que tu as déjà (ou recopie-les si besoin)
 
 // --- SOUS-COMPOSANTS ---
 
@@ -479,34 +394,61 @@ function StatCard({ title, value, icon, color, glass }) {
   );
 }
 
-function AgendaTable({ displayedDays, hours, appointments, dark, glass, setActiveChat }) {
+function AgendaTable({ displayedDays, hours, appointments, dark, glass, setActiveChat, viewMode }) {  // 1. Définir le filtre d'heures AVANT le rendu pour éviter les répétitions
+  // On affiche de 07:00 à 21:00 pour couvrir une large journée de detailing
+const filteredHours = hours.filter(h => {
+    const hourInt = parseInt(h.split(':')[0]);
+    return hourInt >= 7 && hourInt <= 21; 
+  });
+
   return (
-    <table className="w-full border-collapse">
+    <table className="w-full border-collapse min-w-[600px]">
       <thead>
         <tr>
-          <th className="p-4 text-[8px] opacity-30 border-b border-white/5 font-black italic">TIME</th>
+          <th className="p-4 text-[8px] opacity-30 border-b border-white/5 font-black italic text-center">TIME</th>
           {displayedDays.map(day => (
-            <th key={day.toString()} className={`p-4 border-b border-white/5 font-black italic ${isSameDay(day, new Date()) ? 'text-[#bc13fe]' : ''}`}>
-              <span className="text-[10px]">{format(day, 'EEE dd', { locale: fr }).toUpperCase()}</span>
+            <th key={day.toString()} className={`p-4 border-b border-white/5 font-black italic ${isSameDay(day, new Date()) ? 'text-[#00f2ff]' : ''}`}>
+              <div className="flex flex-col items-center">
+                <span className="text-[10px] uppercase tracking-widest">{format(day, 'EEE', { locale: fr })}</span>
+                <span className="text-lg leading-none mt-1">{format(day, 'dd')}</span>
+              </div>
             </th>
           ))}
         </tr>
       </thead>
       <tbody>
-        {hours.filter(h => parseInt(h) >= 8 && parseInt(h) <= 20).map(hour => (
-          <tr key={hour} className="h-16 group">
-            <td className="text-center text-[9px] opacity-20 group-hover:opacity-100 border-b border-white/5 font-black italic">{hour}</td>
+        {/* 2. Utiliser filteredHours pour générer les lignes */}
+        {filteredHours.map(hour => (
+          <tr key={hour} className="h-20 group">
+            <td className="text-center text-[9px] opacity-20 group-hover:opacity-100 border-b border-white/5 font-black italic border-r border-white/5 px-4">
+              {hour}
+            </td>
             {displayedDays.map(day => {
+              // 3. Recherche du rendez-vous
               const rdv = appointments.find(a => 
                 a.appointment_date === format(day, 'yyyy-MM-dd') && 
                 a.appointment_time.startsWith(hour.split(':')[0]) && 
                 (a.status === 'confirmé' || a.status === 'terminé')
               );
+
               return (
-                <td key={day.toString()} className="border-b border-white/5 border-l border-white/5 relative hover:bg-white/5 transition-colors">
+                <td key={day.toString()} className="border-b border-white/5 border-l border-white/5 relative hover:bg-[#bc13fe]/5 transition-colors p-1">
                   {rdv && (
-                    <div onClick={() => setActiveChat({id: rdv.client_id, name: rdv.client_name})} className="absolute inset-1 bg-[#bc13fe] text-white p-2 rounded-xl text-[7px] cursor-pointer hover:scale-95 transition-all shadow-lg overflow-hidden font-black italic flex flex-col justify-center items-center text-center">
-                      <p className="truncate w-full">{rdv.client_name?.split('@')[0].toUpperCase()}</p>
+                    <div 
+                      onClick={() => setActiveChat({id: rdv.client_id, name: rdv.client_name})} 
+                      className="absolute inset-1 bg-[#bc13fe] text-white p-3 rounded-2xl text-[8px] cursor-pointer hover:scale-[0.98] active:scale-95 transition-all shadow-lg overflow-hidden font-black italic flex flex-col justify-center border border-white/20 animate-in fade-in zoom-in duration-300"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[6px] uppercase">
+                          {rdv.client_name?.[0]}
+                        </div>
+                        <p className="truncate uppercase tracking-tighter">
+                          {rdv.client_name?.split('@')[0]}
+                        </p>
+                      </div>
+                      <p className="opacity-60 text-[7px] truncate font-medium normal-case">
+                        {rdv.service_selected}
+                      </p>
                     </div>
                   )}
                 </td>
@@ -521,7 +463,7 @@ function AgendaTable({ displayedDays, hours, appointments, dark, glass, setActiv
 
 function getDisplayedDays(currentDate, viewMode) {
   const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const count = viewMode === 'day' ? 1 : 5;
+  const count = viewMode === 'day' ? 1 : 5; // 1 jour ou 5 jours (Lundi-Vendredi)
   return Array.from({ length: count }, (_, i) => addDays(viewMode === 'day' ? currentDate : start, i));
 }
 

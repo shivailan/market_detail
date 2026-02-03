@@ -4,23 +4,16 @@ import { supabase } from '../lib/supabase';
 export default function Navbar({ setView, view, session, dark, setDark, onAuthClick, selectedPro, onBackToExplorer, setSession }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // --- NOUVELLE FONCTION DE DÉCONNEXION SÉCURISÉE ---
   const handleSignOut = async () => {
     try {
-      // On tente la déconnexion Supabase
       await supabase.auth.signOut();
     } catch (error) {
       console.error("Erreur déconnexion:", error);
     } finally {
-      // QUOI QU'IL ARRIVE : On nettoie l'interface
       if (setSession) setSession(null);
       setView('landing');
       setIsOpen(false);
-      
-      // Nettoyage radical pour éviter les erreurs de token (403)
       localStorage.clear();
-      
-      // On force le rafraîchissement vers l'accueil pour réinitialiser l'état propre
       window.location.href = "/";
     }
   };
@@ -28,32 +21,40 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
   const userRole = session?.user?.user_metadata?.role || session?.user?.role;
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0];
 
-  const glassClass = dark ? 'bg-black/80 border-white/10' : 'bg-white/90 border-black/10 shadow-sm';
-  const linkClass = "relative py-1 transition-all duration-300 hover:text-[#bc13fe] tracking-widest font-black uppercase text-[12px]";
+  // Couleurs adaptatives
+  const glassClass = dark ? 'bg-black/80 border-white/10' : 'bg-white/90 border-black/5 shadow-sm';
+  const linkClass = `relative py-1 transition-all duration-300 hover:text-[#bc13fe] tracking-widest font-black uppercase text-[11px] ${dark ? 'text-white' : 'text-slate-600'}`;
   const activeLine = "absolute -bottom-1 left-0 w-full h-[3px] bg-[#bc13fe] animate-in slide-in-from-left-2 duration-500";
 
   return (
-    <nav className={`fixed top-0 left-0 w-full z-[2000] px-6 py-4 md:px-10 md:py-6 flex justify-between items-center italic transition-all duration-500 backdrop-blur-2xl border-b ${glassClass} ${dark ? 'text-white' : 'text-black'}`}>
+    <nav className={`fixed top-0 left-0 w-full z-[2000] px-6 py-4 md:px-10 md:py-6 flex justify-between items-center italic transition-all duration-500 backdrop-blur-2xl border-b ${glassClass} ${dark ? 'text-white' : 'text-slate-900'}`}>
       
-{selectedPro ? (
-  <div className="flex items-center justify-between w-full animate-in fade-in duration-500">
-    {/* LOGO : On réduit la taille sur mobile pour laisser de la place au bouton */}
-    <div className="logo-font text-[14px] md:text-[20px] font-black tracking-[0.2em] md:tracking-[0.4em] uppercase opacity-40 truncate pr-4">
-      DetailPlan
-    </div>
+      {selectedPro ? (
+        <div className="flex items-center justify-between w-full animate-in fade-in duration-500">
+          <div className="logo-font text-[14px] md:text-[20px] font-black tracking-[0.2em] md:tracking-[0.4em] uppercase opacity-40 truncate pr-4">
+            DetailPlan
+          </div>
 
-    <button 
-      onClick={onBackToExplorer}
-      className="flex items-center gap-2 md:gap-3 px-4 md:px-8 py-2.5 md:py-3 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] text-[10px] md:text-[11px] tracking-widest uppercase font-black hover:bg-[#bc13fe] hover:text-white transition-all shadow-[0_0_20px_rgba(188,19,254,0.2)] shrink-0"
-    >
-      <i className="fas fa-arrow-left text-[10px]"></i>
-      {/* On cache le texte sur les petits écrans, on l'affiche à partir de md (tablette/pc) */}
-      <span className="hidden md:inline">Retour_Explorer</span>
-      <span className="md:hidden">RETOUR</span>
-    </button>
-  </div>
-) : (
-  // ... le reste de ton code (Logo classique, Desktop Nav, etc.)
+          <div className="flex items-center gap-4">
+            {/* SWITCH MODE DANS LE PROFIL PRO */}
+            <button 
+              onClick={() => setDark(!dark)}
+              className={`w-10 h-10 flex items-center justify-center rounded-full border transition-all ${dark ? 'bg-white/5 border-white/10 text-yellow-400' : 'bg-black/5 border-black/10 text-indigo-600'}`}
+            >
+              <i className={`fas ${dark ? 'fa-sun' : 'fa-moon'}`}></i>
+            </button>
+
+            <button 
+              onClick={onBackToExplorer}
+              className="flex items-center gap-2 md:gap-3 px-4 md:px-8 py-2.5 md:py-3 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] text-[10px] md:text-[11px] tracking-widest uppercase font-black hover:bg-[#bc13fe] hover:text-white transition-all shadow-lg shrink-0"
+            >
+              <i className="fas fa-arrow-left text-[10px]"></i>
+              <span className="hidden md:inline">Retour_Explorer</span>
+              <span className="md:hidden">RETOUR</span>
+            </button>
+          </div>
+        </div>
+      ) : (
         <>
           {/* LOGO */}
           <div 
@@ -69,15 +70,13 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
               Accueil
               {view === 'landing' && <div className={activeLine}></div>}
             </button>
-            
             <button onClick={() => setView('explorer')} className={linkClass}>
               TROUVER MON EXPERT
               {view === 'explorer' && <div className={activeLine}></div>}
             </button>
-            
             <button 
               onClick={() => setView('pricing')} 
-              className={`${linkClass} hover:text-[#00f2ff] ${view === 'pricing' ? 'text-[#00f2ff]' : 'opacity-60'}`}
+              className={`${linkClass} ${view === 'pricing' ? 'text-[#00f2ff]' : 'opacity-60'}`}
             >
               VOUS ÊTES PRO ?
               {view === 'pricing' && <div className="absolute -bottom-1 left-0 w-full h-[3px] bg-[#00f2ff]"></div>}
@@ -86,9 +85,9 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
             {session && (
               <button 
                 onClick={() => setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations')} 
-                className={`ml-4 px-8 py-3 border-2 rounded-2xl transition-all font-black text-[11px] tracking-widest
+                className={`ml-4 px-8 py-3 border-2 rounded-2xl transition-all font-black text-[10px] tracking-widest
                   ${view === 'dashboard' || view === 'mes-reservations' 
-                    ? 'bg-[#bc13fe] border-[#bc13fe] text-white shadow-[0_10px_20px_rgba(188,19,254,0.3)]' 
+                    ? 'bg-[#bc13fe] border-[#bc13fe] text-white shadow-lg' 
                     : 'border-[#bc13fe] text-[#bc13fe] hover:bg-[#bc13fe] hover:text-white'}
                 `}
               >
@@ -98,64 +97,71 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
           </div>
 
           {/* ACTIONS DROITE */}
-          <div className="hidden lg:flex items-center gap-6">
-            {session ? (
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setView('profil')}
-                  className={`flex items-center gap-5 px-6 py-3 rounded-2xl border-2 transition-all hover:border-[#00f2ff] group ${dark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/5'}`}
-                >
-                  <span className="text-[11px] font-black tracking-widest group-hover:text-[#00f2ff] transition-colors">{displayName.toUpperCase()}</span>
-                  <div className="h-8 w-8 rounded-xl bg-[#00f2ff]/10 flex items-center justify-center text-[#00f2ff] border border-[#00f2ff]/20 group-hover:rotate-12 transition-transform">
-                    <i className="fas fa-user-gear text-[12px]"></i>
-                  </div>
-                </button>
-
-                <button 
-                  onClick={handleSignOut} 
-                  className="w-12 h-12 flex items-center justify-center rounded-2xl opacity-30 hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all border-2 border-transparent hover:border-red-500/20"
-                >
-                  <i className="fas fa-power-off text-lg"></i>
-                </button>
-              </div>
-            ) : (
-              <button onClick={onAuthClick} className={`px-12 py-4 rounded-2xl text-[12px] font-black tracking-widest uppercase transition-all shadow-xl hover:scale-105 active:scale-95 ${dark ? 'bg-white text-black hover:bg-[#00f2ff]' : 'bg-black text-white hover:bg-[#bc13fe]'}`}>
-                CONNEXION
-              </button>
-            )}
-          </div>
-
-          {/* BURGER MOBILE */}
-          <button onClick={() => setIsOpen(!isOpen)} className="flex lg:hidden flex-col gap-1.5 z-[2100] relative p-4 rounded-2xl bg-white/5 border border-white/10">
-            <span className={`w-8 h-[3px] bg-current transition-all duration-300 ${isOpen ? 'rotate-45 translate-y-2 text-[#00f2ff]' : ''}`}></span>
-            <span className={`w-5 h-[3px] bg-current transition-all duration-300 ${isOpen ? 'opacity-0' : ''}`}></span>
-            <span className={`w-8 h-[3px] bg-current transition-all duration-300 ${isOpen ? '-rotate-45 -translate-y-2 text-[#00f2ff]' : ''}`}></span>
-          </button>
-
-
-          {/* MENU OVERLAY MOBILE */}
-          <div className={`fixed inset-0 h-screen w-screen bg-[#050505] z-[2050] flex flex-col items-center justify-between py-24 transition-all duration-500 lg:hidden ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#bc13fe]/10 blur-[120px] rounded-full pointer-events-none"></div>
+          <div className="flex items-center gap-3 md:gap-6">
             
-            <div className="relative z-10 flex flex-col items-center gap-10 text-center">
-              <button onClick={() => { setView('landing'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-white active:text-[#00f2ff]">ACCUEIL</button>
-              <button onClick={() => { setView('explorer'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-white active:text-[#00f2ff]">EXPLORER</button>
-              <button onClick={() => { setView('pricing'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-[#00f2ff]">TARIFS</button>
-              {session && (
-                 <button onClick={() => { setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations'); setIsOpen(false); }} className="text-5xl font-black italic tracking-tighter text-[#bc13fe]">
-                   {userRole === 'pro' ? 'ATELIER' : 'MISSIONS'}
-                 </button>
+            {/* SWITCH MODE GLOBAL */}
+            <button 
+              onClick={() => setDark(!dark)}
+              className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all ${dark ? 'bg-white/5 border-white/10 text-yellow-400 hover:bg-white/10' : 'bg-black/5 border-black/10 text-indigo-600 hover:bg-black/10'}`}
+            >
+              <i className={`fas ${dark ? 'fa-sun' : 'fa-moon'}`}></i>
+            </button>
+
+            <div className="hidden lg:flex items-center gap-6">
+              {session ? (
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setView('profil')}
+                    className={`flex items-center gap-5 px-6 py-3 rounded-2xl border-2 transition-all hover:border-[#00f2ff] group ${dark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/5'}`}
+                  >
+                    <span className="text-[11px] font-black tracking-widest uppercase">{displayName}</span>
+                    <div className="h-8 w-8 rounded-xl bg-[#00f2ff]/10 flex items-center justify-center text-[#00f2ff] border border-[#00f2ff]/20">
+                      <i className="fas fa-user-gear text-[12px]"></i>
+                    </div>
+                  </button>
+                  <button onClick={handleSignOut} className="w-12 h-12 flex items-center justify-center rounded-2xl opacity-30 hover:opacity-100 text-red-500 transition-all border border-transparent hover:border-red-500/20">
+                    <i className="fas fa-power-off text-lg"></i>
+                  </button>
+                </div>
+              ) : (
+                <button onClick={onAuthClick} className={`px-10 py-3.5 rounded-2xl text-[11px] font-black tracking-widest uppercase transition-all shadow-xl hover:scale-105 active:scale-95 ${dark ? 'bg-white text-black hover:bg-[#00f2ff]' : 'bg-black text-white hover:bg-[#bc13fe]'}`}>
+                  CONNEXION
+                </button>
               )}
             </div>
 
-            <div className="relative z-10 flex flex-col items-center gap-6 w-full px-12">
-               {session && (
-                  <button onClick={() => { setView('profil'); setIsOpen(false); }} className="text-white/40 text-[10px] tracking-[0.5em] mb-4 uppercase underline underline-offset-8">Réglages_Profil</button>
-               )}
+            {/* BURGER MOBILE */}
+            <button onClick={() => setIsOpen(!isOpen)} className={`flex lg:hidden flex-col gap-1.5 z-[2100] relative p-4 rounded-2xl transition-all ${dark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'}`}>
+              <span className={`w-6 h-[2px] bg-current transition-all ${isOpen ? 'rotate-45 translate-y-2 text-[#00f2ff]' : ''}`}></span>
+              <span className={`w-4 h-[2px] bg-current transition-all ${isOpen ? 'opacity-0' : ''}`}></span>
+              <span className={`w-6 h-[2px] bg-current transition-all ${isOpen ? '-rotate-45 -translate-y-2 text-[#00f2ff]' : ''}`}></span>
+            </button>
+          </div>
+
+          {/* MENU MOBILE OVERLAY */}
+          <div className={`fixed inset-0 h-screen w-screen transition-all duration-500 lg:hidden ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'} ${dark ? 'bg-[#050505]' : 'bg-slate-50'}`}>
+            <div className={`absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 ${dark ? 'bg-[#bc13fe]/10' : 'bg-[#bc13fe]/5'} blur-[120px] rounded-full pointer-events-none`}></div>
+            
+            <div className="relative z-10 flex flex-col items-center justify-center h-full gap-10 text-center px-6">
+              <button onClick={() => { setView('landing'); setIsOpen(false); }} className={`text-4xl font-black italic tracking-tighter ${dark ? 'text-white' : 'text-slate-900'}`}>ACCUEIL</button>
+              <button onClick={() => { setView('explorer'); setIsOpen(false); }} className={`text-4xl font-black italic tracking-tighter ${dark ? 'text-white' : 'text-slate-900'}`}>EXPLORER</button>
+              <button onClick={() => { setView('pricing'); setIsOpen(false); }} className="text-4xl font-black italic tracking-tighter text-[#00f2ff]">TARIFS</button>
+              
+              {session && (
+                 <button onClick={() => { setView(userRole === 'pro' ? 'dashboard' : 'mes-reservations'); setIsOpen(false); }} className="text-4xl font-black italic tracking-tighter text-[#bc13fe]">
+                   {userRole === 'pro' ? 'ATELIER' : 'MISSIONS'}
+                 </button>
+              )}
+
+              <div className="w-full h-[1px] bg-current opacity-10 my-4"></div>
+
               {session ? (
-                <button onClick={handleSignOut} className="text-[11px] text-red-500 font-black tracking-[0.3em] uppercase py-5 w-full border border-red-500/30 rounded-2xl bg-red-500/5">DÉCONNEXION</button>
+                <>
+                  <button onClick={() => { setView('profil'); setIsOpen(false); }} className={`text-sm font-black italic tracking-widest ${dark ? 'text-white/40' : 'text-slate-400'}`}>MON_PROFIL</button>
+                  <button onClick={handleSignOut} className="w-full py-6 rounded-2xl border border-red-500/30 text-red-500 font-black italic tracking-[0.2em]">DÉCONNEXION</button>
+                </>
               ) : (
-                <button onClick={() => { onAuthClick(); setIsOpen(false); }} className="px-10 py-6 bg-[#bc13fe] text-white rounded-2xl text-[11px] font-black tracking-[0.3em] shadow-2xl w-full">ACCÈS_PLATEFORME</button>
+                <button onClick={() => { onAuthClick(); setIsOpen(false); }} className="w-full py-6 bg-[#bc13fe] text-white rounded-2xl font-black italic tracking-[0.2em] shadow-xl">ACCÈS_PLATEFORME</button>
               )}
             </div>
           </div>

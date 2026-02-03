@@ -31,6 +31,7 @@ export default function App() {
   const [selectedPro, setSelectedPro] = useState(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   
+  
   // --- ÉTATS AUTHENTIFICATION ---
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
