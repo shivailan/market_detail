@@ -9,8 +9,9 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 app.use(cors());
 
+
+
 // --- 1. LE WEBHOOK (SÉCURISÉ) ---
-// Note : express.raw est obligatoire ici pour que Stripe puisse vérifier la signature
 app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
@@ -22,18 +23,14 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // A. QUAND LE PAIEMENT RÉUSSIT
+  const session = event.data.object;
+
+  // A. GESTION DES PAIEMENTS RÉUSSIS
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    console.log("💰 Metadata reçus de Stripe:", session.metadata);
-
-    // Génération du code de validation DP-XXXX
-    const secureCode = "DP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    // Insertion de la mission dans Supabase avec les infos de la session
-    const { data: newAppointment, error } = await supabase
-      .from('appointments')
-      .insert([{
+    // CAS 1 : Mission Client
+    if (session.mode === 'payment') {
+      const secureCode = "DP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+      const { error } = await supabase.from('appointments').insert([{
         pro_id: session.metadata.pro_id,
         client_name: session.metadata.client_email || session.customer_details?.email,
         service_selected: session.metadata.service_name,
@@ -43,17 +40,21 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
         validation_code: secureCode,
         payment_status: 'escrow',
         status: 'confirmé'
-      }])
-      .select();
+      }]);
+      if (error) console.error("❌ Erreur Supabase Mission:", error.message);
+    }
 
-    if (error) {
-      console.error("❌ Erreur Supabase lors de l'insertion:", error.message);
-    } else {
-      console.log(`✅ MISSION CRÉÉE EN BASE ! ID: ${newAppointment[0].id} | Code: ${secureCode}`);
+    // CAS 2 : Abonnement Pro
+    if (session.mode === 'subscription') {
+      const userId = session.metadata.userId;
+      await supabase.from('profiles_pro')
+        .update({ subscription_status: 'active', subscription_type: 'monthly' })
+        .eq('id', userId);
+      console.log("✅ Abonnement activé");
     }
   }
 
-  // B. QUAND L'ONBOARDING DU PRO EST TERMINÉ
+  // B. GESTION DE L'ONBOARDING CONNECT
   if (event.type === 'account.updated') {
     const account = event.data.object;
     if (account.details_submitted) {
@@ -67,79 +68,72 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) =
   res.json({received: true});
 });
 
-// --- 2. MIDDLEWARES (APRES LE WEBHOOK) ---
+// --- 2. MIDDLEWARES ---
 app.use(express.json());
 
 // --- 3. ROUTES API ---
 
-// LIBÉRATION DES FONDS (QUAND LE PRO ENTRE LE CODE)
+// ABONNEMENT MENSUEL (29.99€)
+app.post('/create-subscription-session', async (req, res) => {
+  const { userId, email } = req.body;
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{
+        price: 'price_1Sw2OmR3HvQFL1AwQ2utw86B', // Ton ID réel
+        quantity: 1,
+      }],
+      metadata: { userId: userId },
+      customer_email: email,
+      success_url: `${process.env.FRONTEND_URL}/pro-dashboard?subscription=success`,
+      cancel_url: `${process.env.FRONTEND_URL}/pro-dashboard?subscription=cancel`,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// LIBÉRATION DES FONDS (VÉRIFICATION CODE)
 app.post('/release-funds', async (req, res) => {
   const { appointmentId, validationCode } = req.body;
   
-  console.log("--- TENTATIVE DE VALIDATION ---");
-  console.log("ID Reçu:", appointmentId);
-  console.log("Code Reçu:", validationCode);
-
   try {
-    // 1. On récupère la mission
-const { data: appt, error: fetchError } = await supabase
-  .from('appointments')
-  .select('*, profiles_pro!appointments_pro_id_fkey(stripe_connect_id, subscription_type)') // <--- ON PRÉCISE LA CLÉ
-  .eq('id', appointmentId.trim())
-  .maybeSingle();
+    const { data: appt, error: fetchError } = await supabase
+      .from('appointments')
+      .select('*, profiles_pro!appointments_pro_id_fkey(stripe_connect_id, subscription_type)')
+      .eq('id', appointmentId.trim())
+      .maybeSingle();
 
-    if (fetchError || !appt) {
-      console.error("❌ ERREUR BASE : Mission introuvable ou problème de jointure Profiles_Pro", fetchError);
-      return res.status(404).json({ error: "Mission introuvable en base." });
-    }
+    if (fetchError || !appt) return res.status(404).json({ error: "Mission introuvable." });
 
-    console.log("Code en Base:", appt.validation_code);
-
-    // 2. Comparaison ultra-stricte (sans espaces, tout en majuscules)
     const codeBase = appt.validation_code.trim().toUpperCase();
     const codeSaisi = validationCode.trim().toUpperCase();
 
-    if (codeBase !== codeSaisi) {
-      console.log(`❌ ECHEC : Base(${codeBase}) vs Saisi(${codeSaisi})`);
-      return res.status(400).json({ error: "CODE_INVALIDE" });
-    }
+    if (codeBase !== codeSaisi) return res.status(400).json({ error: "CODE_INVALIDE" });
 
-    // 3. Vérification du compte Connect du Pro
-    if (!appt.profiles_pro?.stripe_connect_id) {
-      console.error("❌ ERREUR : Le pro n'a pas de compte Stripe Connect lié.");
-      return res.status(400).json({ error: "Compte Stripe Pro manquant." });
-    }
-
-    console.log("✅ Code OK ! Transfert en cours vers:", appt.profiles_pro.stripe_connect_id);
-
-    // 4. Transfert Stripe
+    // CALCUL COMMISSION : 85% si commission, 100% si monthly
     const totalAmount = Math.round(appt.total_price * 100);
-    const transferAmount = appt.profiles_pro.subscription_type === 'commission' 
-      ? Math.round(totalAmount * 0.85) 
-      : totalAmount;
+    const transferAmount = appt.profiles_pro.subscription_type === 'monthly' 
+      ? totalAmount 
+      : Math.round(totalAmount * 0.85);
 
     await stripe.transfers.create({
       amount: transferAmount,
       currency: 'eur',
       destination: appt.profiles_pro.stripe_connect_id,
-      description: `Libération mission ${appt.id}`
     });
 
-    // 5. Mise à jour statut
-    await supabase.from('appointments')
-      .update({ status: 'terminé', payment_status: 'released' })
-      .eq('id', appt.id);
+    await supabase.from('appointments').update({ status: 'terminé', payment_status: 'released' }).eq('id', appt.id);
 
-    console.log("💰 SUCCÈS : Fonds débloqués !");
     res.json({ success: true });
-
   } catch (e) {
-    console.error("❌ ERREUR CRITIQUE :", e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// CRÉATION COMPTE CONNECT (STRIPE ONBOARDING)
+// CRÉATION COMPTE CONNECT
 app.post('/create-connect-account', async (req, res) => {
   const { userId, email } = req.body;
   try {
@@ -158,7 +152,7 @@ app.post('/create-connect-account', async (req, res) => {
   }
 });
 
-// CRÉATION SESSION PAIEMENT (STRIPE CHECKOUT)
+// PAIEMENT MISSION CLIENT
 app.post('/create-checkout-session', async (req, res) => {
   const { serviceName, price, metadata } = req.body;
   try {
@@ -173,12 +167,33 @@ app.post('/create-checkout-session', async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      metadata: metadata, // Contient pro_id, date, time, etc.
+      metadata: metadata,
       success_url: `${process.env.FRONTEND_URL}/mes-reservations?status=success`,
       cancel_url: `${process.env.FRONTEND_URL}/explorer`,
     });
     res.json({ url: session.url });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- NOUVELLE ROUTE : ACCÈS AU COFFRE-FORT STRIPE DU PRO ---
+app.post('/create-portal-link', async (req, res) => {
+  const { stripeConnectId } = req.body;
+
+  if (!stripeConnectId) {
+    return res.status(400).json({ error: "ID Stripe Connect manquant." });
+  }
+
+  try {
+    // Génère un lien de connexion unique et temporaire (valable quelques minutes)
+    const loginLink = await stripe.accounts.createLoginLink(stripeConnectId);
+    
+    // On renvoie l'URL vers laquelle le pro sera redirigé
+    res.json({ url: loginLink.url });
+    console.log("✅ Lien Stripe Portal généré avec succès");
+  } catch (e) {
+    console.error("❌ Erreur Stripe Login Link:", e.message);
     res.status(500).json({ error: e.message });
   }
 });

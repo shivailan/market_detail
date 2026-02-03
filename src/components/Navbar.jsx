@@ -35,20 +35,25 @@ export default function Navbar({ setView, view, session, dark, setDark, onAuthCl
   return (
     <nav className={`fixed top-0 left-0 w-full z-[2000] px-6 py-4 md:px-10 md:py-6 flex justify-between items-center italic transition-all duration-500 backdrop-blur-2xl border-b ${glassClass} ${dark ? 'text-white' : 'text-black'}`}>
       
-      {selectedPro ? (
-        <div className="flex items-center justify-between w-full animate-in fade-in duration-500">
-          <div className="logo-font text-[16px] md:text-[20px] font-black tracking-[0.4em] uppercase opacity-30">
-            DetailPlan
-          </div>
-          <button 
-            onClick={onBackToExplorer}
-            className="flex items-center gap-3 px-8 py-3 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] text-[11px] tracking-widest uppercase font-black hover:bg-[#bc13fe] hover:text-white transition-all shadow-[0_0_20px_rgba(188,19,254,0.2)]"
-          >
-            <i className="fas fa-arrow-left text-[10px]"></i>
-            <span>Retour_Explorer</span>
-          </button>
-        </div>
-      ) : (
+{selectedPro ? (
+  <div className="flex items-center justify-between w-full animate-in fade-in duration-500">
+    {/* LOGO : On réduit la taille sur mobile pour laisser de la place au bouton */}
+    <div className="logo-font text-[14px] md:text-[20px] font-black tracking-[0.2em] md:tracking-[0.4em] uppercase opacity-40 truncate pr-4">
+      DetailPlan
+    </div>
+
+    <button 
+      onClick={onBackToExplorer}
+      className="flex items-center gap-2 md:gap-3 px-4 md:px-8 py-2.5 md:py-3 rounded-full border-2 border-[#bc13fe] text-[#bc13fe] text-[10px] md:text-[11px] tracking-widest uppercase font-black hover:bg-[#bc13fe] hover:text-white transition-all shadow-[0_0_20px_rgba(188,19,254,0.2)] shrink-0"
+    >
+      <i className="fas fa-arrow-left text-[10px]"></i>
+      {/* On cache le texte sur les petits écrans, on l'affiche à partir de md (tablette/pc) */}
+      <span className="hidden md:inline">Retour_Explorer</span>
+      <span className="md:hidden">RETOUR</span>
+    </button>
+  </div>
+) : (
+  // ... le reste de ton code (Logo classique, Desktop Nav, etc.)
         <>
           {/* LOGO */}
           <div 

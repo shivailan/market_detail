@@ -4,8 +4,7 @@ import {
   format,
   isSameDay,
   startOfWeek,
-  subDays,
-  subWeeks,
+  subWeeks
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useCallback, useEffect, useState } from 'react';
@@ -44,31 +43,68 @@ export default function ProDashboard({ session, dark }) {
     alert("Lien copié ! Collez-le sur votre fiche Google Maps.");
   };
 
+  // Dans ton composant ProDashboard
+const handleGoToStripe = async () => {
+  // 1. On vérifie si on a le profil (remplace 'profile' par le nom de ta variable d'état)
+  if (!profile?.stripe_connect_id) {
+    alert("Votre compte Stripe n'est pas encore configuré.");
+    return;
+  }
+
+  try {
+    const response = await fetch('http://localhost:3000/create-portal-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stripeConnectId: profile.stripe_connect_id }), // Utilise le bon nom ici
+    });
+    
+    const data = await response.json();
+    
+    if (data.url) {
+      window.open(data.url, '_blank'); // Ouvre le dashboard Stripe Express
+    } else {
+      console.error("Erreur:", data.error);
+    }
+  } catch (err) {
+    console.error("Erreur lors de la création du lien Stripe:", err);
+  }
+};
+
   // --- ÉTATS MESSAGERIE ---
   const [conversations, setConversations] = useState([]);
 
   const hours = Array.from({ length: 15 }, (_, i) => (i + 7).toString().padStart(2, '0') + ':00');
 
   // --- LOGIQUE DE CALCUL DE L'ACTIVITÉ RÉELLE ---
-  const getActivityData = () => {
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = subDays(new Date(), 6 - i);
-      return format(d, 'yyyy-MM-dd');
-    });
+const getActivityData = () => {
+  // On récupère le lundi de la semaine sélectionnée (currentDate)
+  const startOfSelectedWeek = startOfWeek(currentDate, { weekStartsOn: 1 });
+  
+  // On génère les 7 jours de cette semaine précise
+  const daysOfSelectedWeek = Array.from({ length: 7 }, (_, i) => {
+    return format(addDays(startOfSelectedWeek, i), 'yyyy-MM-dd');
+  });
 
-    return last7Days.map(dateStr => {
-      const dailyTotal = appointments
-        .filter(a => a.appointment_date === dateStr && a.status === 'terminé')
-        .reduce((sum, a) => sum + Number(a.total_price || 0), 0);
-      
-      const height = Math.min((dailyTotal / 500) * 100, 100); 
-      return {
-        label: format(new Date(dateStr), 'EEE', { locale: fr }),
-        value: dailyTotal,
-        height: height || 5 
-      };
-    });
-  };
+  return daysOfSelectedWeek.map(dateStr => {
+    const dailyTotal = appointments
+      .filter(a => {
+        const apptDate = a.appointment_date?.split('T')[0]; 
+        return apptDate === dateStr && (a.status === 'terminé' || a.status === 'confirmé');
+      })
+      .reduce((sum, a) => {
+        const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
+        return sum + (Number(a.total_price || 0) * multiplier);
+      }, 0);
+    
+    const height = dailyTotal > 0 ? Math.max((dailyTotal / 500) * 100, 15) : 0;
+
+    return {
+      label: format(new Date(dateStr), 'EEE', { locale: fr }),
+      value: dailyTotal.toFixed(0),
+      height: height
+    };
+  });
+};
 
   const handleConnectStripe = async () => {
   const response = await fetch('http://localhost:3000/create-connect-account', {
@@ -119,30 +155,32 @@ export default function ProDashboard({ session, dark }) {
 
   // --- STATISTIQUES ---
 // --- STATISTIQUES MISES À JOUR ---
-  const stats = {
-    // Argent total des missions finies
-    totalRevenue: appointments
-      .filter(a => a.status === 'terminé')
-      .reduce((sum, a) => sum + Number(a.total_price || 0), 0),
+  // --- STATISTIQUES MISES À JOUR AVEC LOGIQUE DE COMMISSION ---
+const stats = {
+  // ARGENT RÉEL REÇU (Missions terminées)
+  totalRevenue: appointments
+    .filter(a => a.status === 'terminé')
+    .reduce((sum, a) => {
+      // Si commission : le pro voit 85% | Si monthly : le pro voit 100%
+      const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
+      return sum + (Number(a.total_price || 0) * multiplier);
+    }, 0).toFixed(2),
 
-    // Missions qui attendent d'être acceptées
-    pendingMissions: appointments.filter(a => a.status === 'en attente').length,
+  pendingMissions: appointments.filter(a => a.status === 'en attente').length,
+  activeMissions: appointments.filter(a => a.status === 'confirmé').length,
 
-    // Missions acceptées et en cours
-    activeMissions: appointments.filter(a => a.status === 'confirmé').length,
-
-    // ARGENT BLOQUÉ (SÉQUESTRE) : 
-    // On compte tout ce qui a le statut de paiement 'escrow' (ou 'payé') 
-    // ET qui n'est pas encore marqué comme 'terminé'
-    escrowAmount: appointments
-      .filter(a => 
-        (a.payment_status === 'escrow' || a.payment_status === 'payé') && 
-        a.status !== 'terminé' && 
-        a.status !== 'refusé' && 
-        a.status !== 'annulé'
-      )
-      .reduce((sum, a) => sum + Number(a.total_price || 0), 0),
-  };
+  // ARGENT BLOQUÉ (SÉQUESTRE)
+  escrowAmount: appointments
+    .filter(a => 
+      (a.payment_status === 'escrow' || a.payment_status === 'payé') && 
+      a.status !== 'terminé' && a.status !== 'refusé' && a.status !== 'annulé'
+    )
+    .reduce((sum, a) => {
+      // Ici aussi, on affiche au pro ce qu'il va RÉELLEMENT toucher après commission
+      const multiplier = profile?.subscription_type === 'monthly' ? 1 : 0.85;
+      return sum + (Number(a.total_price || 0) * multiplier);
+    }, 0).toFixed(2),
+};
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -210,6 +248,10 @@ export default function ProDashboard({ session, dark }) {
     </button>
   </div>
 )}
+
+<button onClick={handleGoToStripe} className="bg-blue-600 text-white p-3 rounded">
+  Voir mes virements et mon RIB sur Stripe
+</button>
           {/* HEADER BAR */}
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-6">
@@ -268,27 +310,70 @@ export default function ProDashboard({ session, dark }) {
                 <StatCard title="En Séquestre" value={`${stats.escrowAmount}€`} icon="fa-lock" color="#bc13fe" glass={glass} />
                 <StatCard title="Missions Actives" value={stats.activeMissions} icon="fa-car" color="#fff" glass={glass} />
                 
-                <div className={`col-span-1 sm:col-span-3 p-8 rounded-[40px] border ${glass} min-h-[300px] flex flex-col justify-between`}>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-[10px] tracking-widest opacity-50 font-black">PERFORMANCE_WEEK</p>
-                      <h4 className="text-[8px] font-black text-[#00f2ff] mt-1">REVENUS_DÉTAILLÉS</h4>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[12px] font-black text-[#bc13fe]">{activityData.reduce((sum, d) => sum + d.value, 0)}€</span>
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between h-40 gap-3 mt-6">
-                    {activityData.map((day, i) => (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-3 group">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-[#bc13fe] text-white text-[8px] py-1 px-2 rounded-md mb-1 font-black">{day.value}€</div>
-                        <div style={{ height: `${day.height}%` }} className={`w-full max-w-[40px] rounded-t-xl transition-all duration-1000 ${day.value > 0 ? 'bg-gradient-to-t from-[#bc13fe] to-[#00f2ff]' : 'bg-white/5'}`} />
-                        <span className="text-[8px] font-black opacity-30">{day.label.toUpperCase()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+<div className={`col-span-1 sm:col-span-3 p-8 rounded-[40px] border ${glass} min-h-[300px] flex flex-col justify-between`}>
+  <div className="flex justify-between items-center">
+    <div>
+      <p className="text-[10px] tracking-widest opacity-50 font-black">PERFORMANCE_WEEK</p>
+      <h4 className="text-[8px] font-black text-[#00f2ff] mt-1">REVENUS_DÉTAILLÉS_NETS</h4>
+    </div>
+
+    {/* NAVIGATION SEMAINE */}
+  <div className="flex gap-2">
+    <button 
+      onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
+      className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all text-[10px]"
+    >
+      <i className="fas fa-chevron-left"></i>
+    </button>
+    <button 
+      onClick={() => setCurrentDate(new Date())} // Bouton "Aujourd'hui"
+      className="px-3 rounded-full border border-white/10 text-[7px] font-black hover:bg-white hover:text-black transition-all"
+    >
+      NOW
+    </button>
+    <button 
+      onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
+      className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-[#bc13fe] hover:text-white transition-all text-[10px]"
+    >
+      <i className="fas fa-chevron-right"></i>
+    </button>
+  </div>
+  
+    <div className="text-right">
+      <span className="text-[12px] font-black text-[#bc13fe]">
+        {activityData.reduce((sum, d) => sum + Number(d.value), 0)}€
+      </span>
+    </div>
+  </div>
+
+<div className="flex items-end justify-between h-48 gap-3 mt-6 border-b border-white/10 pb-2">
+  {activityData.map((day, i) => (
+    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group">
+      
+      {/* Tooltip (Montant au survol) */}
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-[#bc13fe] text-white text-[8px] py-1 px-2 rounded-md mb-2 font-black shadow-xl whitespace-nowrap">
+        {day.value} €
+      </div>
+
+      {/* LA BARRE : On force l'affichage avec des couleurs pleines si le dégradé bug */}
+      <div 
+        style={{ 
+          height: `${day.height}%`, 
+          minHeight: Number(day.value) > 0 ? '4px' : '0px' 
+        }} 
+        className={`w-full max-w-[35px] rounded-t-lg transition-all duration-700 shadow-[0_0_15px_rgba(188,19,254,0.3)] ${
+          Number(day.value) > 0 
+          ? 'bg-[#bc13fe] bg-gradient-to-t from-[#bc13fe] to-[#00f2ff]' 
+          : 'bg-white/5'
+        }`}
+      />
+      
+      <span className="text-[8px] font-black opacity-30 mt-3">{day.label.toUpperCase()}</span>
+    </div>
+  ))}
+</div>
+</div>
+</div>
 
               {/* SIDEBAR OVERVIEW */}
               <div className="lg:col-span-4 space-y-6">
@@ -621,14 +706,61 @@ function ProCMS({ supabase, profile, session, dark, onComplete }) {
     e.target.value = ""; 
   };
 
-  const save = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.from('profiles_pro').upsert({ id: session.user.id, ...formData, is_visible: true, updated_at: new Date().toISOString() });
-      if (error) throw error;
-      onComplete();
-    } catch (err) { alert(err.message); } finally { setLoading(false); }
-  };
+const save = async () => {
+  setLoading(true);
+  try {
+    // 1. Sauvegarde immédiate des modifications (nom, services, prix...)
+    const { error: upsertError } = await supabase
+      .from('profiles_pro')
+      .upsert({ 
+        id: session.user.id, 
+        ...formData, 
+        updated_at: new Date().toISOString() 
+      });
+
+    if (upsertError) throw upsertError;
+
+    // 2. VÉRIFICATION DE SÉCURITÉ : On récupère le statut de paiement actuel en base
+    const { data: currentStatus } = await supabase
+      .from('profiles_pro')
+      .select('subscription_status, subscription_type')
+      .eq('id', session.user.id)
+      .single();
+
+    // 3. LOGIQUE DE REDIRECTION INTELLIGENTE
+    // On ne redirige vers Stripe QUE SI :
+    // - L'utilisateur a choisi 'monthly'
+    // - ET que son statut n'est PAS 'active'
+    if (formData.subscription_type === 'monthly' && currentStatus?.subscription_status !== 'active') {
+      console.log("💰 Nouvel abonnement : Direction Stripe...");
+      
+      const response = await fetch('http://localhost:3000/create-subscription-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: session.user.id, 
+          email: session.user.email 
+        }),
+      });
+      
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return; 
+      }
+    } 
+
+    // 4. Si c'est en mode commission OU si l'abonnement est déjà 'active'
+    console.log("✅ Modifications enregistrées sans frais supplémentaires.");
+    onComplete(); // On ferme simplement le CMS
+    alert("Profil mis à jour avec succès !");
+
+  } catch (err) {
+    alert("Erreur lors de l'enregistrement : " + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const inputStyle = `w-full border p-4 md:p-6 rounded-[20px] mb-4 outline-none font-black italic uppercase transition-all ${dark ? 'bg-black text-white border-white/10 focus:border-[#bc13fe]' : 'bg-slate-50 text-black border-black/10 focus:border-[#bc13fe]'}`;
 
