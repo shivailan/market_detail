@@ -23,72 +23,75 @@ export default function BookingModal({ pro, session, onClose, dark }) {
     majorDirt: 'Non'
   });
 
-  // 1. RÉCUPÉRATION DES RDV
-// --- RÉCUPÉRATION ET TEMPS RÉEL ---
-useEffect(() => {
-  if (!pro?.id) return;
+  // 1. RÉCUPÉRATION DES RDV & REALTIME
+  useEffect(() => {
+    if (!pro?.id) return;
 
-  const loadData = async () => {
-    // On récupère TOUS les rendez-vous du pro sans exception pour debugger
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*') // On prend tout
-      .eq('pro_id', pro.id);
+    const loadData = async () => {
+      const { data } = await supabase
+        .from('appointments')
+        .select('appointment_date, appointment_time, status')
+        .eq('pro_id', pro.id);
+      
+      if (data) setDbAppointments(data);
+    };
+
+    loadData();
+
+    const channel = supabase
+      .channel('table-db-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'appointments', filter: `pro_id=eq.${pro.id}` }, 
+        () => loadData()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [pro.id]);
+
+  // 2. GÉNÉRATION DE TOUS LES CRÉNEAUX AVEC ÉTAT "PRIS"
+// 2. GÉNÉRATION DE TOUS LES CRÉNEAUX AVEC ÉTAT "PRIS" OU "PASSÉ"
+  const allSlots = useMemo(() => {
+    if (!pro.working_hours?.start || !pro.working_hours?.end) return [];
     
-    if (data) {
-      console.log("📊 TOTAL RDV en base pour ce pro:", data.length);
-      console.log("Détails des dates reçues:", data.map(d => d.appointment_date));
-      setDbAppointments(data);
+    const now = new Date();
+    const targetDateStr = format(selectedDate, 'yyyy-MM-dd');
+    const todayStr = format(now, 'yyyy-MM-dd');
+
+    // 1. Liste des codes "1000" pour les RDV occupés en base
+    const busyTimes = dbAppointments
+      .filter(appt => {
+        const dbDate = appt.appointment_date.replace(/\D/g, '').substring(0, 8);
+        const targetDateClean = targetDateStr.replace(/\D/g, '');
+        const isValid = !['refusé', 'annulé'].includes(appt.status?.toLowerCase());
+        return dbDate === targetDateClean && isValid;
+      })
+      .map(appt => appt.appointment_time.replace(/\D/g, '').substring(0, 4));
+
+    const slots = [];
+    let current = parse(pro.working_hours.start, 'HH:mm', new Date());
+    const end = parse(pro.working_hours.end, 'HH:mm', new Date());
+
+    while (isBefore(current, end)) {
+      const timeStr = format(current, 'HH:mm');
+      const timeCode = timeStr.replace(':', ''); 
+      
+      // --- LOGIQUE D'EXPIRATION ---
+      // On crée un objet Date pour le créneau en question afin de le comparer à "maintenant"
+      const slotDateTime = parse(`${targetDateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
+      
+      const isTaken = busyTimes.includes(timeCode);
+      const isPast = isBefore(slotDateTime, now); // Est-ce que l'heure du créneau est avant "maintenant" ?
+
+      slots.push({
+        time: timeStr,
+        isTaken: isTaken,
+        isPast: isPast // Nouveau drapeau
+      });
+      current = addMinutes(current, 60);
     }
-  };
-
-  loadData();
-
-  const channel = supabase
-    .channel('table-db-changes')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'appointments', filter: `pro_id=eq.${pro.id}` }, 
-      () => loadData()
-    )
-    .subscribe();
-
-  return () => { supabase.removeChannel(channel); };
-}, [pro.id]);
-
-// 2. GÉNÉRATION DES CRÉNEAUX DISPONIBLES UNIQUEMENT
-const availableSlots = useMemo(() => {
-  if (!pro.working_hours?.start || !pro.working_hours?.end) return [];
-  
-  // Date sélectionnée sur le calendrier (ex: 20260204)
-  const targetDate = format(selectedDate, 'yyyyMMdd');
-
-  // On crée la liste des heures occupées pour CE JOUR
-  const busyTimes = dbAppointments
-    .filter(appt => {
-      // Nettoyage date DB (garde juste YYYYMMDD)
-      const dbDate = appt.appointment_date.replace(/\D/g, '').substring(0, 8);
-      const isSameDay = dbDate === targetDate;
-      const isValid = !['refusé', 'annulé'].includes(appt.status?.toLowerCase());
-      return isSameDay && isValid;
-    })
-    .map(appt => appt.appointment_time.replace(/\D/g, '').substring(0, 4));
-
-  const slots = [];
-  let current = parse(pro.working_hours.start, 'HH:mm', new Date());
-  const end = parse(pro.working_hours.end, 'HH:mm', new Date());
-
-  while (isBefore(current, end)) {
-    const timeStr = format(current, 'HH:mm');
-    const timeCode = timeStr.replace(':', ''); 
-    
-    // Si l'heure n'est PAS dans busyTimes, on l'affiche
-    if (!busyTimes.includes(timeCode)) {
-      slots.push(timeStr);
-    }
-    current = addMinutes(current, 60);
-  }
-  return slots;
-}, [selectedDate, pro.working_hours, dbAppointments]);
+    return slots;
+  }, [selectedDate, pro.working_hours, dbAppointments]);
 
   const handleFinalize = async () => {
     if (!selectedTime) return alert("Veuillez choisir un créneau.");
@@ -172,59 +175,124 @@ const availableSlots = useMemo(() => {
                   disabled={(d) => isBefore(d, new Date().setHours(0,0,0,0))} 
                 />
               </div>
+<div className="grid grid-cols-3 gap-2">
+  {allSlots.map(({time, isTaken, isPast}) => {
+    const isUnavailable = isTaken || isPast;
 
-              <div className="grid grid-cols-3 gap-2">
-                {availableSlots.length > 0 ? (
-                  availableSlots.map((time) => (
-                    <button 
-                      key={time} 
-                      onClick={() => { setSelectedTime(time); setStep(3); }} 
-                      className={`py-4 rounded-xl border text-[11px] transition-all ${
-                        selectedTime === time 
-                          ? 'bg-[#00f2ff] text-black border-[#00f2ff]' 
-                          : 'border-current/10 hover:border-[#bc13fe]'
-                      }`}
-                    >
-                      {time}
-                    </button>
-                  ))
-                ) : (
-                  <div className="col-span-3 py-10 text-center opacity-30 text-[10px] tracking-widest uppercase">
-                    Aucun créneau disponible ce jour
-                  </div>
-                )}
-              </div>
+    return (
+      <button 
+        key={time} 
+        onClick={() => { 
+          if (isTaken) return alert("Ce créneau est déjà réservé.");
+          if (isPast) return alert("Ce créneau est déjà passé.");
+          setSelectedTime(time); 
+          setStep(3); 
+        }} 
+        className={`py-4 rounded-xl border text-[11px] transition-all relative flex flex-col items-center justify-center gap-1 ${
+          isUnavailable 
+            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60' 
+            : selectedTime === time 
+              ? 'bg-[#00f2ff] text-black border-[#00f2ff]' 
+              : 'border-current/10 hover:border-[#bc13fe]'
+        }`}
+      >
+        <span className={isUnavailable ? 'line-through opacity-50' : ''}>{time}</span>
+        
+        {/* Icône dynamique : Cadenas pour réservé, Horloge pour passé */}
+        {isTaken && <i className="fas fa-lock text-[8px] text-red-500"></i>}
+        {isPast && !isTaken && <i className="fas fa-clock text-[8px] text-gray-400"></i>}
+      </button>
+    );
+  })}
+</div>
             </div>
           )}
 
-          {step === 3 && (
-            <div className="space-y-8 animate-in fade-in">
-              <h3 className="text-3xl tracking-tighter">DIAGNOSTIC_</h3>
-              <div className="space-y-4 text-left">
-                <label className="text-[10px] opacity-40">TYPE_INTERVENTION</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['Atelier', 'Domicile'].map(l => (
-                    <button key={l} onClick={() => setAnswers({...answers, location: l})} className={`py-3 rounded-xl text-[10px] border transition-all ${answers.location === l ? 'bg-[#bc13fe] text-white border-[#bc13fe]' : 'border-current/10 opacity-40'}`}>{l}</button>
-                  ))}
-                </div>
-                {answers.location === 'Domicile' && (
-                  <input className="w-full p-4 rounded-xl border border-current/10 bg-transparent text-[10px] outline-none focus:border-[#bc13fe]" placeholder="ADRESSE_COMPLETE..." value={answers.address} onChange={e => setAnswers({...answers, address: e.target.value})} />
-                )}
-              </div>
-              <div className="space-y-3 text-left">
-                <label className="text-[10px] opacity-40">TAILLE_VEHICULE</label>
-                <select value={answers.vehicleType} onChange={e => setAnswers({...answers, vehicleType: e.target.value})} className={`w-full p-4 rounded-xl border border-current/10 text-[10px] bg-transparent outline-none`}>
-                  <option value="">SELECTIONNER...</option>
-                  <option value="Mini">Mini / Citadine</option>
-                  <option value="Compacte">Compacte</option>
-                  <option value="SUV">SUV / Berline</option>
-                  <option value="Utilitaire">Utilitaire</option>
-                </select>
-              </div>
-            </div>
-          )}
+{step === 3 && (
+  <div className="space-y-8 animate-in fade-in text-left pb-4">
+    <h3 className="text-3xl tracking-tighter">DIAGNOSTIC_</h3>
+    
+    {/* LIEU DE PRESTATION */}
+    <div className="space-y-4">
+      <label className="text-[10px] opacity-40 font-bold uppercase">Lieu de la prestation</label>
+      <div className="grid grid-cols-2 gap-2 p-1 bg-current/[0.05] rounded-2xl border border-current/5">
+        {['Atelier', 'Domicile'].map(l => (
+          <button 
+            key={l} 
+            onClick={() => setAnswers({...answers, location: l})} 
+            className={`py-3 rounded-xl text-[10px] font-black transition-all ${
+              answers.location === l ? 'bg-white text-black shadow-sm' : 'opacity-40'
+            }`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+    </div>
 
-          {step === 4 && (
+    {/* OPTIONS DOMICILE (Conditionnel) */}
+    {answers.location === 'Domicile' && (
+      <div className="space-y-6 animate-in slide-in-from-top-4">
+        {/* ADRESSE */}
+        <div className="space-y-3">
+          <label className="text-[10px] opacity-40 font-bold uppercase">Adresse complète</label>
+          <input 
+            className="w-full p-5 rounded-2xl border border-current/10 bg-transparent text-[11px] outline-none focus:border-[#bc13fe] transition-all" 
+            placeholder="N°, rue, ville, CP..." 
+            value={answers.address} 
+            onChange={e => setAnswers({...answers, address: e.target.value})} 
+          />
+        </div>
+
+        {/* PRISE ÉLECTRIQUE (Nouveau) */}
+        <div className="space-y-3 p-5 rounded-3xl border border-[#bc13fe]/20 bg-[#bc13fe]/5">
+          <div className="flex items-center gap-3 mb-2">
+            <i className="fas fa-plug text-[#bc13fe] text-xs"></i>
+            <label className="text-[10px] font-bold uppercase tracking-widest">Accès à une prise ?</label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {['Oui', 'Non'].map(choice => (
+              <button 
+                key={choice} 
+                onClick={() => setAnswers({...answers, hasPower: choice})} 
+                className={`py-3 rounded-xl text-[10px] font-black border transition-all ${
+                  answers.hasPower === choice 
+                    ? 'bg-[#bc13fe] text-white border-[#bc13fe]' 
+                    : 'border-current/10 opacity-40'
+                }`}
+              >
+                {choice.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          {answers.hasPower === 'Non' && (
+            <p className="text-[9px] text-red-500 mt-2 italic font-bold">
+              * Attention : Une source d'énergie est nécessaire pour l'équipement.
+            </p>
+          )}
+        </div>
+      </div>
+    )}
+
+    {/* TAILLE DU VÉHICULE */}
+    <div className="space-y-3">
+      <label className="text-[10px] opacity-40 font-bold uppercase">Taille du véhicule</label>
+      <select 
+        value={answers.vehicleType} 
+        onChange={e => setAnswers({...answers, vehicleType: e.target.value})} 
+        className="w-full p-5 rounded-2xl bg-current/[0.05] border border-current/5 text-[11px] font-black outline-none appearance-none"
+      >
+        <option value="">SÉLECTIONNER...</option>
+        <option value="Mini">Mini / Citadine</option>
+        <option value="Compacte">Compacte</option>
+        <option value="SUV">SUV / Berline</option>
+        <option value="Utilitaire">Utilitaire</option>
+      </select>
+    </div>
+  </div>
+)}
+
+          {step === 4 && (/* ... Recap */
             <div className="animate-in zoom-in-95 space-y-6 py-4">
               <div className="w-16 h-16 bg-[#00f2ff]/10 text-[#00f2ff] rounded-full flex items-center justify-center mx-auto text-xl"><i className="fas fa-check"></i></div>
               <div className={`p-6 rounded-3xl text-left border border-current/10 space-y-4 bg-current/[0.02]`}>
@@ -240,9 +308,9 @@ const availableSlots = useMemo(() => {
         {/* FOOTER */}
         <div className="p-6 border-t border-current/5 bg-inherit">
           {step === 3 ? (
-            <button onClick={() => setStep(4)} disabled={!canContinue} className="w-full py-5 bg-[#bc13fe] text-white rounded-2xl text-[11px] tracking-[0.2em] disabled:opacity-20 transition-all">RECAPITULATIF_</button>
+            <button onClick={() => setStep(4)} disabled={!canContinue} className="w-full py-5 bg-[#bc13fe] text-white rounded-2xl text-[11px] tracking-[0.2em] disabled:opacity-20 transition-all uppercase">Récapitulatif_</button>
           ) : step === 4 ? (
-            <button onClick={handleFinalize} disabled={loading} className="w-full py-5 bg-white text-black rounded-2xl text-[11px] tracking-[0.2em]">{loading ? 'EN_COURS...' : 'FINALISER_PAIEMENT'}</button>
+            <button onClick={handleFinalize} disabled={loading} className="w-full py-5 bg-white text-black rounded-2xl text-[11px] tracking-[0.2em] uppercase">{loading ? 'EN_COURS...' : 'Payer maintenant'}</button>
           ) : null}
         </div>
       </div>
